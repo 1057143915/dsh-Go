@@ -1,0 +1,986 @@
+diff --git a/app/lib/app.dart b/app/lib/app.dart
+index 2a9b2fd..2c34b23 100644
+--- a/app/lib/app.dart
++++ b/app/lib/app.dart
+@@ -11,8 +11,11 @@ import 'performance/refresh_rate.dart';
+ import 'state/app_info.dart';
+ import 'state/appearance_state.dart';
+ import 'state/locale_state.dart';
++import 'state/sessions_state.dart' show currentSessionProvider;
+ import 'state/star_prompt.dart' show starPromptGateProvider, starPromptProvider;
+ import 'state/tile_style_state.dart';
++import 'state/wallpaper_rotation.dart';
++import 'state/wallpaper_state.dart';
+ import 'ui/chat/dsh_ui/dsh_ui_model.dart' show DshUiAppAccent;
+ import 'ui/common/side_insets.dart';
+ import 'ui/launch/launch_overlay.dart';
+@@ -63,6 +66,9 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
+     if (ref.read(starPromptGateProvider)) ref.read(starPromptProvider);
+     // 伙伴小屋: her invitation ledger is read now, so it is known before the room opens.
+     ref.read(companionInitiativeProvider);
++    // 壁纸池: a new picture at every launch, when that moment is on (async: the first
++    // frame doesn't wait for it).
++    unawaited(ref.read(customWallpaperProvider.notifier).rotateOnLaunch());
+     // 刷新率: some systems cap third-party apps at 60 Hz and then show their per-app
+     // switch as an in-app setting; the app answers frames to run at the fastest rate
+     // while it is actually drawing (see RefreshRateService).
+@@ -87,6 +93,12 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
+   @override
+   void didChangeAccessibilityFeatures() => setState(() {});
+ 
++  /// 壁纸池: its timer runs in front only (lib/state/wallpaper_rotation.dart).
++  @override
++  void didChangeAppLifecycleState(AppLifecycleState state) {
++    ref.read(wallpaperRotationProvider).setForeground(state == AppLifecycleState.resumed);
++  }
++
+   void _themesFor(AppAccent accent, bool english, bool glassBlur, bool instantPages, bool fluid) {
+     if (accent == _accent &&
+         english == _english &&
+@@ -149,6 +161,11 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
+     unawaited(
+       RefreshRateService.instance.setMode(ref.watch(performancePrefsProvider.select((p) => p.refreshRate))),
+     );
++    // 壁纸池: the timer follows the settings; a change of chat forwards to it below.
++    ref.read(wallpaperRotationProvider).sync(ref.watch(wallpaperPoolProvider).value);
++    ref.listen(currentSessionProvider, (previous, next) {
++      if (previous != next) ref.read(wallpaperRotationProvider).onSessionChanged();
++    });
+     final themeMode = ref.watch(uiThemeModeProvider.select((s) => s.value));
+     final appearance = ref.watch(appearanceProvider);
+     final waiting =
+diff --git a/app/lib/l10n/parts/wallpaper_en.arb b/app/lib/l10n/parts/wallpaper_en.arb
+index ce3b64f..7d6a22f 100644
+--- a/app/lib/l10n/parts/wallpaper_en.arb
++++ b/app/lib/l10n/parts/wallpaper_en.arb
+@@ -23,5 +23,25 @@
+   "wallpaperSampleAnswer": "Yes. Saturday afternoon is sunny with a light breeze and waves under half a metre, the best day this week.",
+   "wallpaperSampleNote": "It cools down fast in the evening, so bring a light jacket.",
+   "wallpaperSampleTool": "Checked 3 weather sources",
+-  "searchKwWallpaper": "background,background image,chat background,custom background,backdrop,blur,photo"
++  "wallpaperPoolDirectory": "Wallpaper folder",
++  "wallpaperPoolNone": "No folder chosen",
++  "wallpaperPoolChange": "Another one",
++  "wallpaperPoolOnLaunch": "At every launch",
++  "wallpaperPoolOnChat": "When switching chats",
++  "wallpaperPoolOnInterval": "On a timer",
++  "wallpaperPoolPeriod": "How often",
++  "wallpaperPoolEvery": "Every {minutes} minutes",
++  "@wallpaperPoolEvery": {
++    "placeholders": {
++      "minutes": {
++        "type": "int"
++      }
++    }
++  },
++  "wallpaperPoolEmpty": "No usable pictures in that folder",
++  "wallpaperRaw": "Show as-is",
++  "wallpaperRawFooter": "Whole picture, centred, no blur or dimming",
++  "wallpaperDirect": "Use the original file",
++  "wallpaperDirectFooter": "No copy, no size or format limits",
++  "searchKwWallpaper": "background,background image,chat background,custom background,backdrop,blur,photo,random wallpaper"
+ }
+diff --git a/app/lib/l10n/parts/wallpaper_zh.arb b/app/lib/l10n/parts/wallpaper_zh.arb
+index 72162b4..f732e62 100644
+--- a/app/lib/l10n/parts/wallpaper_zh.arb
++++ b/app/lib/l10n/parts/wallpaper_zh.arb
+@@ -23,5 +23,25 @@
+   "wallpaperSampleAnswer": "适合。周六午后晴，风力 2 级，浪高不到半米，是这周最好的一天。",
+   "wallpaperSampleNote": "傍晚降温明显，带一件薄外套。",
+   "wallpaperSampleTool": "查了 3 个天气来源",
+-  "searchKwWallpaper": "背景,背景图,聊天背景,自定义背景,换背景,模糊,壁纸图片"
++  "wallpaperPoolDirectory": "壁纸文件夹",
++  "wallpaperPoolNone": "还没选文件夹",
++  "wallpaperPoolChange": "换一张",
++  "wallpaperPoolOnLaunch": "每次启动时换",
++  "wallpaperPoolOnChat": "切换聊天框时换",
++  "wallpaperPoolOnInterval": "定时换",
++  "wallpaperPoolPeriod": "更换间隔",
++  "wallpaperPoolEvery": "每 {minutes} 分钟",
++  "@wallpaperPoolEvery": {
++    "placeholders": {
++      "minutes": {
++        "type": "int"
++      }
++    }
++  },
++  "wallpaperPoolEmpty": "这个文件夹里没有能用的图片",
++  "wallpaperRaw": "原样显示",
++  "wallpaperRawFooter": "整图居中、不裁切，模糊和提亮压暗归零",
++  "wallpaperDirect": "直接用原图",
++  "wallpaperDirectFooter": "不拷贝，不限制大小和格式",
++  "searchKwWallpaper": "背景,背景图,聊天背景,自定义背景,换背景,模糊,壁纸图片,随机壁纸"
+ }
+diff --git a/app/lib/state/wallpaper_rotation.dart b/app/lib/state/wallpaper_rotation.dart
+new file mode 100644
+index 0000000..161c037
+--- /dev/null
++++ b/app/lib/state/wallpaper_rotation.dart
+@@ -0,0 +1,75 @@
++// 壁纸自动更换的驱动：定时表、前台判定、切换聊天框。换图本身在
++// CustomWallpaperController.rotate()（lib/state/wallpaper_state.dart），这里只管「什么时候」。
++//
++// 表只在前台走：切到后台就停，回前台重新计时 —— 换背景只在看得见的时候有意义，也省电。
++// 没有后台任务，不申请任何权限。
++
++import 'dart:async';
++
++import 'package:flutter_riverpod/flutter_riverpod.dart';
++
++import '../wallpaper/wallpaper_pool.dart';
++import 'wallpaper_state.dart';
++
++/// 由 [DshApp] 持有：设置变了调 [sync]，前后台切换调 [setForeground]，当前会话变了调
++/// [onSessionChanged]。
++class WallpaperRotationOwner {
++  WallpaperRotationOwner(this._ref);
++
++  final Ref _ref;
++
++  Timer? _timer;
++
++  /// 表对的是哪一档间隔；间隔变了才重建。
++  int? _forMinutes;
++
++  WallpaperPool _pool = const WallpaperPool();
++  bool _foreground = true;
++
++  /// 池的设置变了（启动时读到、设置页改了）：按需起表或停表。
++  void sync(WallpaperPool? pool) {
++    _pool = pool ?? const WallpaperPool();
++    _apply();
++  }
++
++  /// 前后台切换。
++  void setForeground(bool foreground) {
++    if (_foreground == foreground) return;
++    _foreground = foreground;
++    _apply();
++  }
++
++  /// 切换了聊天框。开着这一档才换。
++  void onSessionChanged() {
++    if (!_pool.has(WallpaperPoolTrigger.chat)) return;
++    unawaited(_rotate());
++  }
++
++  void _apply() {
++    final wanted = _foreground && _pool.has(WallpaperPoolTrigger.interval);
++    if (!wanted) {
++      _timer?.cancel();
++      _timer = null;
++      _forMinutes = null;
++      return;
++    }
++    if (_timer != null && _forMinutes == _pool.minutes) return;
++    _timer?.cancel();
++    _forMinutes = _pool.minutes;
++    _timer = Timer.periodic(Duration(minutes: _pool.minutes), (_) => unawaited(_rotate()));
++  }
++
++  /// 换一张；池没设好、文件夹空、图都读不出来时什么也不做（rotate 自己判断）。
++  Future<void> _rotate() => _ref.read(customWallpaperProvider.notifier).rotate();
++
++  void dispose() {
++    _timer?.cancel();
++    _timer = null;
++  }
++}
++
++final wallpaperRotationProvider = Provider<WallpaperRotationOwner>((ref) {
++  final owner = WallpaperRotationOwner(ref);
++  ref.onDispose(owner.dispose);
++  return owner;
++});
+diff --git a/app/lib/state/wallpaper_state.dart b/app/lib/state/wallpaper_state.dart
+index ff10236..19f28d3 100644
+--- a/app/lib/state/wallpaper_state.dart
++++ b/app/lib/state/wallpaper_state.dart
+@@ -1,6 +1,8 @@
+ // 设置 › 主题 › 壁纸: the user's own wallpaper (lib/wallpaper/custom_wallpaper.dart), whether it's
+ // the one in use, and the picture baked for the screen it's on.
+ 
++import 'dart:io';
++
+ import 'dart:ui' as ui;
+ import 'dart:ui' show Brightness;
+ 
+@@ -9,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
+ import '../performance/performance_state.dart';
+ import '../wallpaper/custom_wallpaper.dart';
+ import '../wallpaper/wallpaper_import.dart';
++import '../wallpaper/wallpaper_pool.dart';
+ import '../wallpaper/wallpaper_render.dart';
+ 
+ export '../wallpaper/wallpaper_import.dart' show LaunchImportProblem;
+@@ -84,12 +87,108 @@ class CustomWallpaperController extends AsyncNotifier<CustomWallpaper?> {
+     await _store(current.withTone(brightness, tone.clamp(0.0, 1.0)));
+   }
+ 
++  /// 比这更快的第二次触发（来回切聊天框）不换。
++  static const rotateCooldown = Duration(seconds: 10);
++
++  bool _rotatedAtLaunch = false;
++  bool _rotating = false;
++  DateTime? _rotatedAt;
++
++  /// 每次启动: 池开着这一档就换一张。App 起来后调一次，重复调用只算一次。
++  Future<void> rotateOnLaunch() async {
++    if (_rotatedAtLaunch) return;
++    _rotatedAtLaunch = true;
++    if ((await ref.read(wallpaperPoolProvider.future)).has(WallpaperPoolTrigger.launch)) await rotate();
++  }
++
++  /// 从壁纸池随机换一张。false: 没换（没选文件夹、文件夹里没有能用的图、图都读不出来）。
++  /// [force] 跳过冷却 —— 设置页的「换一张」按的每一次都要算数。
++  Future<bool> rotate({bool force = false}) async {
++    final pool = await ref.read(wallpaperPoolProvider.future);
++    if (pool.directory.isEmpty || _rotating) return false;
++    final now = DateTime.now();
++    final since = _rotatedAt == null ? null : now.difference(_rotatedAt!);
++    if (!force && since != null && since < rotateCooldown) return false;
++    _rotating = true;
++    try {
++      var remaining = pool.direct
++          ? await WallpaperPool.allImages(pool.directory)
++          : await WallpaperPool.images(pool.directory);
++      final previous = await _current;
++      for (var attempt = 0; attempt < WallpaperPool.maxAttempts && remaining.isNotEmpty; attempt++) {
++        final next = WallpaperPool.pick(remaining, previous?.path);
++        if (next == null) break;
++        remaining = remaining.where((path) => path != next).toList();
++        final (wallpaper, _) = pool.direct ? await _adoptDirect(next) : await _adopt(next, previous);
++        if (wallpaper == null) continue; // 认不出来 / 读不出来: 换下一张再试
++        // 原样显示：整图居中、不裁切，模糊和提亮 / 压暗归零。
++        await _store(pool.raw ? wallpaper.copyWith(raw: true, blur: 0, lighten: 0, dim: 0) : wallpaper);
++        await ref.read(wallpaperPoolProvider.notifier).take(next);
++        _rotatedAt = now;
++        return true;
++      }
++      return false;
++    } finally {
++      _rotating = false;
++    }
++  }
++
++  /// 池里的一张图走原有的导入（拷贝、认类型、取边缘色、保留观感）；读不出来时给 null，
++  /// 不把异常抛给界面（没给手机存储权限、选中的文件被删掉）。
++  Future<(CustomWallpaper?, LaunchImportProblem?)> _adopt(String path, CustomWallpaper? previous) async {
++    try {
++      return await ref.read(wallpaperImportProvider).keep(File(path).openRead(), previous: previous);
++    } catch (_) {
++      return (null, LaunchImportProblem.unreadable);
++    }
++  }
++
++  /// 不检查那条路：原图直接当壁纸，不拷贝、不按大小和格式拦（wallpaper_import.dart 的
++  /// dimensions 只解码取宽高，认不出来的格式解码失败就跳过这一张）。
++  Future<(CustomWallpaper?, LaunchImportProblem?)> _adoptDirect(String path) async {
++    final (width, height) = await WallpaperImport.dimensions(path);
++    if (width <= 0 || height <= 0) return (null, LaunchImportProblem.unreadable);
++    return (CustomWallpaper(path: path, width: width, height: height, blur: 0, lighten: 0, dim: 0), null);
++  }
++
+   Future<void> _store(CustomWallpaper wallpaper) async {
+     state = AsyncData(wallpaper);
+     await CustomWallpaper.save(wallpaper);
+   }
+ }
+ 
++/// 壁纸池的设置（lib/wallpaper/wallpaper_pool.dart）: 文件夹、自动更换的时机与间隔。
++final wallpaperPoolProvider = AsyncNotifierProvider<WallpaperPoolController, WallpaperPool>(
++  WallpaperPoolController.new,
++);
++
++class WallpaperPoolController extends AsyncNotifier<WallpaperPool> {
++  @override
++  Future<WallpaperPool> build() => WallpaperPool.load();
++
++  /// 选好的文件夹；空串: 没选。
++  Future<void> setDirectory(String directory) => _update((pool) => pool.copyWith(directory: directory, last: ''));
++
++  Future<void> toggle(WallpaperPoolTrigger trigger, bool on) => _update((pool) => pool.toggled(trigger, on));
++
++  Future<void> nextPeriod() => _update((pool) => pool.nextPeriod());
++
++  /// 原样显示：整图居中、不裁切，模糊和提亮 / 压暗归零。
++  Future<void> setRaw(bool raw) => _update((pool) => pool.copyWith(raw: raw));
++
++  /// 不检查：原图直接当壁纸，不拷贝、不按大小和格式拦。
++  Future<void> setDirect(bool direct) => _update((pool) => pool.copyWith(direct: direct));
++
++  /// 记下这一张，下次随机避开它。
++  Future<void> take(String path) => _update((pool) => pool.copyWith(last: path));
++
++  Future<void> _update(WallpaperPool Function(WallpaperPool) change) async {
++    final next = change(await future);
++    state = AsyncData(next);
++    await WallpaperPool.save(next);
++  }
++}
++
+ /// The wallpaper baked for [WallpaperFrame]; null: the default backdrop (none chosen, switched
+ /// off, or the picture can't be read — the page never breaks over it).
+ final wallpaperImageProvider = FutureProvider.autoDispose.family<ui.Image?, WallpaperFrame>((ref, frame) async {
+diff --git a/app/lib/ui/settings/appearance/wallpaper_section.dart b/app/lib/ui/settings/appearance/wallpaper_section.dart
+index 98a8185..a629c0a 100644
+--- a/app/lib/ui/settings/appearance/wallpaper_section.dart
++++ b/app/lib/ui/settings/appearance/wallpaper_section.dart
+@@ -30,6 +30,7 @@ import '../../../l10n/l10n.dart';
+ import '../../../state/wallpaper_state.dart';
+ import '../../../wallpaper/custom_wallpaper.dart';
+ import '../../../wallpaper/wallpaper_look.dart';
++import '../../../wallpaper/wallpaper_pool.dart';
+ import '../../../wallpaper/wallpaper_render.dart';
+ import '../../common/brief_notice.dart';
+ import '../../common/expand_reveal.dart';
+@@ -39,6 +40,7 @@ import '../../theme/theme.dart';
+ import '../../wallpaper/wallpaper_backdrop.dart';
+ import '../../wallpaper/wallpaper_editor_page.dart';
+ import '../../wallpaper/wallpaper_preview_page.dart';
++import '../../workspace/directory_picker.dart' show showDirectoryPicker;
+ import '../settings_widgets.dart';
+ import 'appearance_page.dart' show PickerGrid;
+ import 'launch_screen_section.dart' show LaunchScreenPicker;
+@@ -128,11 +130,40 @@ class _WallpaperSectionState extends ConsumerState<WallpaperSection> {
+     if (text != null) messenger?.showBriefNotice(text);
+   }
+ 
++  /// 壁纸文件夹: the folder browser the workspace already uses (it walks the active host's
++  /// disks; on the local host that is the phone's storage). A folder that has pictures in it
++  /// changes one right away, so the pick shows what it looks like.
++  Future<void> _choosePoolDirectory() async {
++    final title = context.l10n.wallpaperPoolDirectory;
++    final directory = await showDirectoryPicker(context, title: title);
++    if (directory == null || directory.isEmpty) return;
++    await ref.read(wallpaperPoolProvider.notifier).setDirectory(directory);
++    await _changeFromPool();
++  }
++
++  /// 「换一张」: every tap counts, so it skips the cooldown (state/wallpaper_state.dart).
++  Future<void> _changeFromPool() async {
++    final l10n = context.l10n;
++    final messenger = ScaffoldMessenger.maybeOf(context);
++    final changed = await ref.read(customWallpaperProvider.notifier).rotate(force: true);
++    messenger?.showBriefNotice(changed ? l10n.wallpaperChanged : l10n.wallpaperPoolEmpty);
++  }
++
++  Future<void> _togglePool(WallpaperPoolTrigger trigger, bool on) =>
++      ref.read(wallpaperPoolProvider.notifier).toggle(trigger, on);
++
++  Future<void> _nextPoolPeriod() => ref.read(wallpaperPoolProvider.notifier).nextPeriod();
++
++  Future<void> _toggleRaw(bool on) => ref.read(wallpaperPoolProvider.notifier).setRaw(on);
++
++  Future<void> _toggleDirect(bool on) => ref.read(wallpaperPoolProvider.notifier).setDirect(on);
++
+   @override
+   Widget build(BuildContext context) {
+     final l10n = context.l10n;
+     final stored = ref.watch(customWallpaperProvider).value;
+     final notifier = ref.read(customWallpaperProvider.notifier);
++    final pool = ref.watch(wallpaperPoolProvider).value ?? const WallpaperPool();
+     final wallpaper = _draft ?? stored;
+     final on = stored != null && stored.on;
+     final brightness = Theme.of(context).brightness;
+@@ -190,6 +221,55 @@ class _WallpaperSectionState extends ConsumerState<WallpaperSection> {
+             ],
+           ),
+         ),
++        SettingsTile(
++          key: const ValueKey('wallpaper-pool-directory'),
++          title: l10n.wallpaperPoolDirectory,
++          subtitle: pool.directory.isEmpty ? l10n.wallpaperPoolNone : pool.directory,
++          onTap: () => unawaited(_choosePoolDirectory()),
++        ),
++        SettingsTile(
++          key: const ValueKey('wallpaper-pool-change'),
++          title: l10n.wallpaperPoolChange,
++          onTap: () => unawaited(_changeFromPool()),
++        ),
++        SettingsSwitchTile(
++          key: const ValueKey('wallpaper-pool-launch'),
++          title: l10n.wallpaperPoolOnLaunch,
++          value: pool.has(WallpaperPoolTrigger.launch),
++          onChanged: (on) => unawaited(_togglePool(WallpaperPoolTrigger.launch, on)),
++        ),
++        SettingsSwitchTile(
++          key: const ValueKey('wallpaper-pool-chat'),
++          title: l10n.wallpaperPoolOnChat,
++          value: pool.has(WallpaperPoolTrigger.chat),
++          onChanged: (on) => unawaited(_togglePool(WallpaperPoolTrigger.chat, on)),
++        ),
++        SettingsSwitchTile(
++          key: const ValueKey('wallpaper-pool-interval'),
++          title: l10n.wallpaperPoolOnInterval,
++          value: pool.has(WallpaperPoolTrigger.interval),
++          onChanged: (on) => unawaited(_togglePool(WallpaperPoolTrigger.interval, on)),
++        ),
++        SettingsTile(
++          key: const ValueKey('wallpaper-pool-period'),
++          title: l10n.wallpaperPoolPeriod,
++          subtitle: l10n.wallpaperPoolEvery(pool.minutes),
++          onTap: pool.has(WallpaperPoolTrigger.interval) ? () => unawaited(_nextPoolPeriod()) : null,
++        ),
++        SettingsSwitchTile(
++          key: const ValueKey('wallpaper-pool-raw'),
++          title: l10n.wallpaperRaw,
++          subtitle: l10n.wallpaperRawFooter,
++          value: pool.raw,
++          onChanged: (on) => unawaited(_toggleRaw(on)),
++        ),
++        SettingsSwitchTile(
++          key: const ValueKey('wallpaper-pool-direct'),
++          title: l10n.wallpaperDirect,
++          subtitle: l10n.wallpaperDirectFooter,
++          value: pool.direct,
++          onChanged: (on) => unawaited(_toggleDirect(on)),
++        ),
+         SettingsTile(
+           key: const ValueKey('wallpaper-preview'),
+           title: l10n.wallpaperPreview,
+diff --git a/app/lib/wallpaper/custom_wallpaper.dart b/app/lib/wallpaper/custom_wallpaper.dart
+index 7a79d79..450e8d0 100644
+--- a/app/lib/wallpaper/custom_wallpaper.dart
++++ b/app/lib/wallpaper/custom_wallpaper.dart
+@@ -24,6 +24,7 @@ class CustomWallpaper {
+     this.lighten = defaultLighten,
+     this.dim = defaultDim,
+     this.on = true,
++    this.raw = false,
+   });
+ 
+   /// Files over this are refused (the system picker's budget, too).
+@@ -66,6 +67,10 @@ class CustomWallpaper {
+   /// In use. Off: the default backdrop, with this one kept to switch back to.
+   final bool on;
+ 
++  /// 原样显示：整图等比放进屏幕、居中、不裁切，模糊和提亮 / 压暗归零（渲染时按 [windowIn]
++  /// 取景，lib/wallpaper/wallpaper_render.dart）。
++  final bool raw;
++
+   /// [lighten] or [dim], for a page in [brightness].
+   double toneFor(Brightness brightness) => brightness == Brightness.dark ? dim : lighten;
+ 
+@@ -75,6 +80,7 @@ class CustomWallpaper {
+   /// The same window in a picture [picture] large (a downscaled decode of it).
+   Rect windowIn(Size picture, Size screen) {
+     if (picture.isEmpty || screen.isEmpty) return Offset.zero & picture;
++    if (raw) return _fit(picture, screen);
+     final cover = (picture.width / picture.height > screen.width / screen.height)
+         ? Size(picture.height * screen.width / screen.height, picture.height)
+         : Size(picture.width, picture.width * screen.height / screen.width);
+@@ -90,6 +96,22 @@ class CustomWallpaper {
+     );
+   }
+ 
++  /// 原样显示要的那块：整图等比放进屏幕、居中，这块的比例与屏幕一致 —— 渲染层把它拉伸到
++  /// 屏幕，正好不变形、不裁切、居中。
++  static Rect _fit(Size picture, Size screen) {
++    final p = picture.width / picture.height;
++    final s = screen.width / screen.height;
++    final w = picture.width.toDouble();
++    final h = picture.height.toDouble();
++    if ((p - s).abs() < 1e-6) return Rect.fromLTWH(0, 0, w, h);
++    if (p > s) {
++      final seenW = h * s;
++      return Rect.fromLTWH((w - seenW) / 2, 0, seenW, h);
++    }
++    final seenH = w / s;
++    return Rect.fromLTWH(0, (h - seenH) / 2, w, seenH);
++  }
++
+   CustomWallpaper copyWith({
+     double? zoom,
+     double? alignX,
+@@ -98,6 +120,7 @@ class CustomWallpaper {
+     double? lighten,
+     double? dim,
+     bool? on,
++    bool? raw,
+   }) => CustomWallpaper(
+     path: path,
+     width: width,
+@@ -110,6 +133,7 @@ class CustomWallpaper {
+     lighten: lighten ?? this.lighten,
+     dim: dim ?? this.dim,
+     on: on ?? this.on,
++    raw: raw ?? this.raw,
+   );
+ 
+   /// [tone] as the value for [brightness].
+@@ -132,6 +156,7 @@ class CustomWallpaper {
+     'lighten': lighten,
+     'dim': dim,
+     'on': on,
++    'raw': raw,
+   };
+ 
+   static CustomWallpaper? fromJson(Object? raw) {
+@@ -157,6 +182,7 @@ class CustomWallpaper {
+       lighten: unit(raw['lighten'], defaultLighten),
+       dim: unit(raw['dim'], defaultDim),
+       on: raw['on'] != false,
++      raw: raw['raw'] == true,
+     );
+   }
+ 
+@@ -192,8 +218,9 @@ class CustomWallpaper {
+       other.blur == blur &&
+       other.lighten == lighten &&
+       other.dim == dim &&
+-      other.on == on;
++      other.on == on &&
++      other.raw == raw;
+ 
+   @override
+-  int get hashCode => Object.hash(path, width, height, edge, zoom, alignX, alignY, blur, lighten, dim, on);
++  int get hashCode => Object.hash(path, width, height, edge, zoom, alignX, alignY, blur, lighten, dim, on, raw);
+ }
+diff --git a/app/lib/wallpaper/wallpaper_import.dart b/app/lib/wallpaper/wallpaper_import.dart
+index 5439fe0..3703b93 100644
+--- a/app/lib/wallpaper/wallpaper_import.dart
++++ b/app/lib/wallpaper/wallpaper_import.dart
+@@ -4,6 +4,7 @@
+ 
+ import 'dart:async';
+ import 'dart:io';
++import 'dart:ui' as ui;
+ 
+ import 'package:path_provider/path_provider.dart';
+ 
+@@ -64,6 +65,22 @@ class WallpaperImport {
+     return (wallpaper, null);
+   }
+ 
++  /// 原图的尺寸：解码一次，只取宽高。「不检查」那条路用它直接把原图当壁纸 —— 不拷贝、不按
++  /// 大小和格式拦；认不出来（解码失败）返回 null，由调用处跳过这一张。
++  static Future<(int, int)?> dimensions(String path) async {
++    try {
++      final buffer = await ui.ImmutableBuffer.fromFilePath(path);
++      final codec = await ui.instantiateImageCodec(buffer);
++      final image = (await codec.getNextFrame()).image;
++      final size = (image.width, image.height);
++      image.dispose();
++      codec.dispose();
++      return size;
++    } catch (_) {
++      return null;
++    }
++  }
++
+   /// Deletes a wallpaper file; nothing if it's already gone.
+   static Future<void> removeFile(String path) async {
+     try {
+diff --git a/app/lib/wallpaper/wallpaper_pool.dart b/app/lib/wallpaper/wallpaper_pool.dart
+new file mode 100644
+index 0000000..c2d8b22
+--- /dev/null
++++ b/app/lib/wallpaper/wallpaper_pool.dart
+@@ -0,0 +1,209 @@
++// 壁纸池：一个文件夹里的多张图片，随机挑一张当壁纸（lib/state/wallpaper_state.dart 的
++// CustomWallpaperController.rotate）。设置和 CustomWallpaper 一样存 shared_preferences 的一条
++// JSON；图片留在用户自己的文件夹里。
++//
++// 两条取图方式：
++//  - 检查（默认）：把挑中的那一张交给 WallpaperImport.keep()，走原有的导入（拷贝、15 MB 上限、
++//    PNG / JPEG / WebP、取边缘色、保留观感）。
++//  - 不检查（direct）：原图直接当壁纸，不拷贝、不按大小和格式拦，取景用原样模式。
++//
++// 原样显示（raw）管的是画法：整图等比放进屏幕、居中、不裁切，模糊和提亮 / 压暗归零。
++
++import 'dart:convert';
++import 'dart:io';
++import 'dart:math';
++
++import 'package:shared_preferences/shared_preferences.dart';
++
++/// 什么时候自动换一张；可以同时开着几个。
++enum WallpaperPoolTrigger {
++  /// 每次启动 App。
++  launch,
++
++  /// 切换聊天框（当前会话变了）。
++  chat,
++
++  /// 到时间。
++  interval,
++}
++
++/// 壁纸文件夹、自动更换的时机与间隔、上一张（随机时避开它）、以及两条取图/画法开关。
++class WallpaperPool {
++  const WallpaperPool({
++    this.directory = '',
++    this.triggers = const <WallpaperPoolTrigger>{},
++    this.minutes = defaultMinutes,
++    this.last = '',
++    this.raw = false,
++    this.direct = false,
++  });
++
++  static const prefsKey = 'wallpaper_pool';
++
++  /// 定时的档位（分钟）；「更换间隔」一行在这几档之间循环。
++  static const periods = [5, 15, 30, 60];
++  static const defaultMinutes = 30;
++
++  /// 一次最多认这么多张：几万张图的文件夹不整个读进来。
++  static const maxImages = 2000;
++
++  /// 挑中的图读不出来（太大、坏了）时，最多再试几张。
++  static const maxAttempts = 5;
++
++  /// 认的后缀，走检查那条路时用（和导入一致：PNG、JPEG、WebP）。
++  static const extensions = {'.png', '.jpg', '.jpeg', '.webp'};
++
++  final String directory;
++  final Set<WallpaperPoolTrigger> triggers;
++
++  /// 定时那一档的间隔（分钟）。
++  final int minutes;
++
++  /// 上一次挑中的原图路径。
++  final String last;
++
++  /// 原样显示：整图居中、不裁切，模糊和提亮 / 压暗归零。
++  final bool raw;
++
++  /// 不检查：原图直接当壁纸，不拷贝、不按大小和格式拦（认不出的格式解码不出来才跳过）。
++  final bool direct;
++
++  bool has(WallpaperPoolTrigger trigger) => triggers.contains(trigger);
++
++  WallpaperPool copyWith({
++    String? directory,
++    Set<WallpaperPoolTrigger>? triggers,
++    int? minutes,
++    String? last,
++    bool? raw,
++    bool? direct,
++  }) =>
++      WallpaperPool(
++        directory: directory ?? this.directory,
++        triggers: triggers ?? this.triggers,
++        minutes: minutes ?? this.minutes,
++        last: last ?? this.last,
++        raw: raw ?? this.raw,
++        direct: direct ?? this.direct,
++      );
++
++  /// [trigger] 开着或关掉。
++  WallpaperPool toggled(WallpaperPoolTrigger trigger, bool on) {
++    final next = {...triggers};
++    if (on) {
++      next.add(trigger);
++    } else {
++      next.remove(trigger);
++    }
++    return copyWith(triggers: next);
++  }
++
++  /// 下一档间隔：5 → 15 → 30 → 60 → 5（认不出的值从默认档起算）。
++  WallpaperPool nextPeriod() {
++    final at = periods.indexOf(minutes);
++    final from = at < 0 ? periods.indexOf(defaultMinutes) : at;
++    return copyWith(minutes: periods[(from + 1) % periods.length]);
++  }
++
++  Map<String, Object?> toJson() => {
++    'directory': directory,
++    'triggers': [for (final trigger in triggers) trigger.name],
++    'minutes': minutes,
++    'last': last,
++    'raw': raw,
++    'direct': direct,
++  };
++
++  static WallpaperPool fromJson(Object? raw) {
++    if (raw is! Map) return const WallpaperPool();
++    final directory = raw['directory'];
++    final triggers = raw['triggers'];
++    final minutes = raw['minutes'];
++    final last = raw['last'];
++    return WallpaperPool(
++      directory: directory is String ? directory : '',
++      triggers: triggers is List
++          ? {
++              for (final name in triggers)
++                ...WallpaperPoolTrigger.values.where((trigger) => trigger.name == name),
++            }
++          : const <WallpaperPoolTrigger>{},
++      minutes: minutes is int && periods.contains(minutes) ? minutes : defaultMinutes,
++      last: last is String ? last : '',
++      raw: raw['raw'] == true,
++      direct: raw['direct'] == true,
++    );
++  }
++
++  /// 存着的那份；没有、坏了就当没设置过。
++  static Future<WallpaperPool> load([SharedPreferences? prefs]) async {
++    try {
++      final store = prefs ?? await SharedPreferences.getInstance();
++      final stored = store.getString(prefsKey);
++      if (stored == null) return const WallpaperPool();
++      return fromJson(jsonDecode(stored));
++    } catch (_) {
++      return const WallpaperPool();
++    }
++  }
++
++  static Future<void> save(WallpaperPool pool) async {
++    final prefs = await SharedPreferences.getInstance();
++    await prefs.setString(prefsKey, jsonEncode(pool.toJson()));
++  }
++
++  /// [directory] 里（含子文件夹）能当壁纸的图片。排序让每次列举的顺序一样 —— 顺序不定的话
++  /// 「随机」会退化成「跟着文件系统的返回顺序走」。不检查那条路用的是 [allImages]。
++  static Future<List<String>> images(String directory, {int limit = maxImages}) async {
++    if (directory.isEmpty) return const [];
++    try {
++      final dir = Directory(directory);
++      if (!dir.existsSync()) return const [];
++      final found = <String>[];
++      await for (final entity in dir.list(recursive: true, followLinks: false)) {
++        if (entity is! File) continue;
++        if (!extensions.contains(extensionOf(entity.path))) continue;
++        found.add(entity.path);
++        if (found.length >= limit) break;
++      }
++      found.sort();
++      return found;
++    } catch (_) {
++      return const [];
++    }
++  }
++
++  /// 不检查那条路用的列举：不管后缀，只要是文件就收（认不出的格式在解码时会被跳过）。
++  static Future<List<String>> allImages(String directory, {int limit = maxImages}) async {
++    if (directory.isEmpty) return const [];
++    try {
++      final dir = Directory(directory);
++      if (!dir.existsSync()) return const [];
++      final found = <String>[];
++      await for (final entity in dir.list(recursive: true, followLinks: false)) {
++        if (entity is! File) continue;
++        found.add(entity.path);
++        if (found.length >= limit) break;
++      }
++      found.sort();
++      return found;
++    } catch (_) {
++      return const [];
++    }
++  }
++
++  /// [path] 的小写后缀（含点）；没有后缀时空串。
++  static String extensionOf(String path) {
++    final name = path.split('/').last;
++    final dot = name.lastIndexOf('.');
++    return dot <= 0 ? '' : name.substring(dot).toLowerCase();
++  }
++
++  /// 随机挑一张，避开 [current]（连着两次同一张很出戏）；只有一张时就用那一张。
++  static String? pick(List<String> images, String? current, {Random? random}) {
++    if (images.isEmpty) return null;
++    final choices = images.length > 1 && current != null ? images.where((path) => path != current).toList() : images;
++    final from = choices.isEmpty ? images : choices;
++    return from[(random ?? Random()).nextInt(from.length)];
++  }
++}
+diff --git a/app/test/wallpaper/wallpaper_pool_test.dart b/app/test/wallpaper/wallpaper_pool_test.dart
+new file mode 100644
+index 0000000..9f15209
+--- /dev/null
++++ b/app/test/wallpaper/wallpaper_pool_test.dart
+@@ -0,0 +1,191 @@
++// 壁纸池（lib/wallpaper/wallpaper_pool.dart + wallpaper_state 的 rotate）：文件夹列举与过滤、
++// 随机避开上一张、设置的读写与回落、原样显示的取景、以及两条取图链路（检查 / 不检查）。
++
++import 'dart:convert';
++import 'dart:io';
++import 'dart:ui' show Rect, Size;
++
++import 'package:dsh_app/state/wallpaper_state.dart';
++import 'package:dsh_app/wallpaper/custom_wallpaper.dart';
++import 'package:dsh_app/wallpaper/wallpaper_import.dart';
++import 'package:dsh_app/wallpaper/wallpaper_pool.dart';
++import 'package:flutter_riverpod/flutter_riverpod.dart';
++import 'package:flutter_test/flutter_test.dart';
++import 'package:shared_preferences/shared_preferences.dart';
++
++import 'support.dart';
++
++void main() {
++  TestWidgetsFlutterBinding.ensureInitialized();
++
++  late Directory pool;
++
++  setUp(() async {
++    pool = await Directory.systemTemp.createTemp('wallpaper-pool');
++  });
++
++  tearDown(() async {
++    if (pool.existsSync()) await pool.delete(recursive: true);
++  });
++
++  Future<void> put(String name, String bytes) async {
++    final file = File('${pool.path}/$name');
++    await file.create(recursive: true);
++    await file.writeAsString(bytes);
++  }
++
++  test('列出文件夹里的图片：只认 PNG / JPEG / WebP，含子文件夹，顺序稳定', () async {
++    await put('b.JPG', 'b');
++    await put('a.png', 'a');
++    await put('c.gif', 'c');
++    await put('d.txt', 'd');
++    await put('sub/e.webp', 'e');
++
++    expect(await WallpaperPool.images(pool.path), [
++      '${pool.path}/a.png',
++      '${pool.path}/b.JPG',
++      '${pool.path}/sub/e.webp',
++    ]);
++    expect(await WallpaperPool.images('${pool.path}/missing'), isEmpty);
++    expect(await WallpaperPool.images(''), isEmpty);
++  });
++
++  test('不检查那条路的列举：不管后缀', () async {
++    await put('a.png', 'a');
++    await put('b.gif', 'b');
++    await put('c.txt', 'c');
++
++    expect(await WallpaperPool.allImages(pool.path), [
++      '${pool.path}/a.png',
++      '${pool.path}/b.gif',
++      '${pool.path}/c.txt',
++    ]);
++  });
++
++  test('随机挑一张避开上一张；只有一张时就是它', () {
++    expect(WallpaperPool.pick(const [], '/a.png'), isNull);
++    expect(WallpaperPool.pick(const ['/a.png'], '/a.png'), '/a.png');
++    for (var i = 0; i < 20; i++) {
++      expect(WallpaperPool.pick(const ['/a.png', '/b.png'], '/a.png'), '/b.png');
++    }
++  });
++
++  test('原样显示的取景：整图等比居中、不裁切，比例与屏幕一致', () {
++    // 宽图（2:1）在 1:1 的屏幕上：整图高度都在，宽度居中。
++    final wide = CustomWallpaper(path: '/a.jpg', width: 2000, height: 1000, raw: true);
++    final w = wide.windowIn(const Size(2000, 1000), const Size(800, 800));
++    expect(w.top, 0);
++    expect(w.bottom, 1000);
++    expect(w.width, 800);
++    expect(w.left, 600);
++
++    // 高图（1:2）在 1:1 的屏幕上：整图宽度都在，高度居中。
++    final tall = CustomWallpaper(path: '/b.jpg', width: 1000, height: 2000, raw: true);
++    final t = tall.windowIn(const Size(1000, 2000), const Size(800, 800));
++    expect(t.left, 0);
++    expect(t.right, 1000);
++    expect(t.height, 800);
++    expect(t.top, 600);
++
++    // 比例与屏幕一致：就是整图。
++    final same = CustomWallpaper(path: '/c.jpg', width: 800, height: 400, raw: true);
++    expect(same.windowIn(const Size(800, 400), const Size(800, 400)), Rect.fromLTWH(0, 0, 800, 400));
++
++    // 没开原样显示时还是覆盖（裁切）那套老行为。
++    final cover = CustomWallpaper(path: '/d.jpg', width: 2000, height: 1000);
++    expect(cover.windowIn(const Size(2000, 1000), const Size(800, 800)).width, 1600);
++  });
++
++  test('设置的读写与回落', () {
++    final pool = WallpaperPool(directory: '/pics', minutes: 15, raw: true, direct: true);
++    final back = WallpaperPool.fromJson(jsonDecode(jsonEncode(pool.toJson())));
++    expect(back.directory, '/pics');
++    expect(back.minutes, 15);
++    expect(back.triggers, isEmpty);
++    expect(back.raw, isTrue);
++    expect(back.direct, isTrue);
++    expect(back.toggled(WallpaperPoolTrigger.chat, true).has(WallpaperPoolTrigger.chat), isTrue);
++    expect(back.toggled(WallpaperPoolTrigger.chat, true).toggled(WallpaperPoolTrigger.chat, false).triggers, isEmpty);
++    expect(back.nextPeriod().minutes, 30);
++    // 认不出的间隔从默认档起算：5 → 15 → 30 → 60 → 5。
++    expect(const WallpaperPool(minutes: 7).nextPeriod().minutes, 5);
++    expect(const WallpaperPool(minutes: 60).nextPeriod().minutes, 5);
++
++    final broken = WallpaperPool.fromJson({'directory': 7, 'triggers': 'chat', 'minutes': 9, 'last': null});
++    expect(broken.directory, '');
++    expect(broken.triggers, isEmpty);
++    expect(broken.minutes, WallpaperPool.defaultMinutes);
++    expect(broken.last, '');
++    expect(broken.raw, isFalse);
++    expect(broken.direct, isFalse);
++    expect(WallpaperPool.fromJson(null).directory, '');
++  });
++
++  group('从池里换一张', () {
++    late Directory output;
++
++    setUp(() async {
++      output = await Directory.systemTemp.createTemp('wallpaper-copy');
++      // 坏图排在前面（PNG 头、解不出来），好图是 720 × 1280 的 JPEG。
++      await File(brokenFixture).copy('${pool.path}/01_broken.png');
++      await File(brightFixture).copy('${pool.path}/02_bright.jpg');
++    });
++
++    tearDown(() async {
++      if (output.existsSync()) await output.delete(recursive: true);
++    });
++
++    ProviderContainer container() {
++      final container = ProviderContainer(
++        overrides: [wallpaperImportProvider.overrideWithValue(WallpaperImport(directory: () async => output))],
++      );
++      addTearDown(container.dispose);
++      return container;
++    }
++
++    test('检查那条路：坏图跳过，换成能用的那一张；池里的原图不动', () async {
++      SharedPreferences.setMockInitialValues({
++        WallpaperPool.prefsKey: jsonEncode(WallpaperPool(directory: pool.path).toJson()),
++      });
++      final provider = container();
++      final notifier = provider.read(customWallpaperProvider.notifier);
++      for (var i = 0; i < 5; i++) {
++        expect(await notifier.rotate(force: true), isTrue);
++        final wallpaper = provider.read(customWallpaperProvider).value!;
++        expect(wallpaper.path, startsWith(output.path));
++        expect(File(wallpaper.path).existsSync(), isTrue);
++      }
++      final stored = await WallpaperPool.load();
++      expect(stored.last, '${pool.path}/02_bright.jpg');
++      expect(File(stored.last).existsSync(), isTrue);
++      expect(File('${pool.path}/01_broken.png').existsSync(), isTrue);
++    });
++
++    test('不检查那条路：原图直接当壁纸，不拷贝、不模糊不压暗', () async {
++      SharedPreferences.setMockInitialValues({
++        WallpaperPool.prefsKey: jsonEncode(
++          WallpaperPool(directory: pool.path, direct: true, raw: true).toJson(),
++        ),
++      });
++      final provider = container();
++      expect(await provider.read(customWallpaperProvider.notifier).rotate(force: true), isTrue);
++      final wallpaper = provider.read(customWallpaperProvider).value!;
++      expect(wallpaper.path, '${pool.path}/02_bright.jpg'); // 原图本身，没有被拷走
++      expect(File(wallpaper.path).existsSync(), isTrue);
++      expect(wallpaper.blur, 0);
++      expect(wallpaper.lighten, 0);
++      expect(wallpaper.dim, 0);
++      expect(wallpaper.raw, isTrue);
++    });
++
++    test('文件夹里没有能用的图：不换，也不报错', () async {
++      await File('${pool.path}/02_bright.jpg').delete();
++      SharedPreferences.setMockInitialValues({
++        WallpaperPool.prefsKey: jsonEncode(WallpaperPool(directory: pool.path).toJson()),
++      });
++      final provider = container();
++      expect(await provider.read(customWallpaperProvider.notifier).rotate(force: true), isFalse);
++      expect(provider.read(customWallpaperProvider).value, isNull);
++    });
++  });
++}
