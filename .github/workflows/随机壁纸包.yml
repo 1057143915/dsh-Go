@@ -1,10 +1,11 @@
-# 云端打包配置 v7：修正编译错误，出原版包名的 APK（不覆盖安装由用户自己处理）
+# 云端打包配置 v8：完整流程（先建运行时，再打 APK）
 #
-# v7 修的不是功能逻辑，是一处编译错误：
-#   lib/wallpaper/wallpaper_import.dart: dimensions() 里把 ImmutableBuffer 传给了
-#   instantiateImageCodec（它要 Uint8List），改成先 readAsBytes() 再解码。
-#
-# 载荷 = 9 个改好的完整文件（随机壁纸 + 原样显示 + 直接用原图），解包覆盖，不用补丁。
+# v1–v7 的致命错误：直接跑 flutter build apk，跳过了 runtime/build-runtime.sh，
+# 于是 APK 里没有 Linux 运行环境包 → 装上一打开就提示「运行环境包不完整」。
+# 这个仓库的官方流程是两步（见 .github/workflows/runtime.yml 和 tooling/build-apk.sh）：
+#   1. runtime/build-runtime.sh arm64-v8a   → runtime/out/arm64-v8a（rootfs + proot + 原生库）
+#   2. tooling/build-apk.sh                → 带运行时的 APK
+# v8 就按这两步走，不再手搓 flutter build。
 
 name: 随机壁纸包
 
@@ -263,7 +264,7 @@ env:
 jobs:
   apk:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -288,21 +289,39 @@ jobs:
           python3 tool/l10n_merge.py
           flutter pub get
 
-      - name: 静态检查（不阻断，但错误会打印出来）
-        continue-on-error: true
-        run: cd app && flutter analyze
+      - name: 缓存运行时下载（加速后续构建）
+        uses: actions/cache@v5
+        with:
+          path: runtime/.cache
+          key: runtime-dl-${{ hashFiles('runtime/build-runtime.sh', 'runtime/locks/**') }}
+          restore-keys: runtime-dl-
 
-      - name: 构建调试包
-        run: cd app && flutter build apk --debug --flavor arm64 --target-platform android-arm64
-
-      - name: 改名
+      - name: 第一步：构建 arm64 运行时（rootfs + proot + 原生库）
         run: |
+          chmod +x runtime/build-runtime.sh
+          runtime/build-runtime.sh arm64-v8a
+          echo "--- 产物 ---"
+          ls -lh runtime/out/arm64-v8a/assets/runtime/ runtime/out/arm64-v8a/jniLibs/arm64-v8a/ 2>/dev/null || true
+
+      - name: 校验运行时包完整性
+        run: python3 -I tooling/check_runtime_bundle.py arm64
+
+      - name: 第二步：打 APK（走仓库官方脚本，带运行时）
+        run: |
+          chmod +x tooling/build-apk.sh
+          tooling/build-apk.sh --debug -f arm64 --build-name 1.0.15
+
+      - name: 确认 APK 里真有运行时
+        run: |
+          APK=$(ls app/build/app/outputs/flutter-apk/*arm64*debug*.apk | head -1)
+          echo "APK: $APK"
+          unzip -l "$APK" | grep -E "rootfs|base-.*tar|manifest.json" | head -10 || echo "（没找到运行时条目！）"
           mkdir -p /tmp/out
-          cp app/build/app/outputs/flutter-apk/*arm64*.apk /tmp/out/DSH-Go-随机壁纸-调试版.apk
+          cp "$APK" /tmp/out/DSH-Go-随机壁纸.apk
           ls -lh /tmp/out/
 
       - uses: actions/upload-artifact@v4
         with:
-          name: DSH-Go-随机壁纸
-          path: /tmp/out/DSH-Go-随机壁纸-调试版.apk
+          name: DSH-Go-随机壁纸-带运行时
+          path: /tmp/out/DSH-Go-随机壁纸.apk
           retention-days: 7
