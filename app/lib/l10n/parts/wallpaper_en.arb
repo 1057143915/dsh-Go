@@ -38,5 +38,7 @@
   "wallpaperPoolPeriod": "Interval (seconds)",
   "wallpaperDirect": "Use the original file",
   "wallpaperDirectFooter": "No copy, no size or format limits",
-  "wallpaperPoolEmpty": "No usable pictures in that folder"
+  "wallpaperPoolEmpty": "No usable pictures in that folder",
+  "wallpaperContain": "Fit whole picture",
+  "wallpaperDarken": "Darken"
 }
