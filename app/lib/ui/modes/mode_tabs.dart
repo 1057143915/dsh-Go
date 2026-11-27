@@ -8,8 +8,9 @@
 //
 // The bar stands *under* the page, never over it: the page ends where the bar
 // begins, so the composer, the hint below it and any banner on the last line are
-// never covered. 沉浸: after [ModeTabs.barIdle] without a touch it slips away and
-// the page takes the whole screen; any finger brings it back.
+// never covered. 沉浸: a finger on the screen sends the bar away; after
+// [ModeTabs.barIdle] without a touch it comes back and the page gives up that
+// strip of height again.
 
 import 'dart:async';
 
@@ -69,16 +70,17 @@ class _ModeTabsState extends ConsumerState<ModeTabs> {
   /// WebView, no timers.
   final _built = <AppMode>{AppMode.work};
 
-  /// 沉浸: the bar slips away once the screen has been left alone for
-  /// [barIdle], and any touch brings it straight back. A look at the story (or
-  /// at her) is not interrupted by a strip that has nothing to say.
-  static const barIdle = Duration(seconds: 4);
+  /// 沉浸: while the screen is being touched the bar stays away; once it has been
+  /// left alone for [barIdle] the bar comes back, one bar's worth of height in the
+  /// layout (never over the page). A finger anywhere hides it again at once.
+  static const barIdle = Duration(seconds: 3);
   Timer? _idle;
-  bool _sunk = false;
+  bool _awake = false;
 
   @override
   void initState() {
     super.initState();
+    // The first look at a page gets no bar until the screen has been idle once.
     _arm();
   }
 
@@ -91,15 +93,14 @@ class _ModeTabsState extends ConsumerState<ModeTabs> {
   void _arm() {
     _idle?.cancel();
     _idle = Timer(barIdle, () {
-      if (mounted && !_sunk) setState(() => _sunk = true);
+      if (mounted && !_awake) setState(() => _awake = true);
     });
   }
 
-  /// A touch, a tab change or the keyboard closing: the bar is here, and it
-  /// starts counting again.
-  void _wake() {
-    if (_sunk) setState(() => _sunk = false);
-    _arm();
+  /// A finger down (or a drag, or a tab pick): the bar goes and the wait restarts.
+  void _hide() {
+    _idle?.cancel();
+    if (_awake) setState(() => _awake = false);
   }
 
   Widget _page(AppMode mode) => mode == AppMode.work ? widget.work : appModePage(mode);
@@ -119,7 +120,8 @@ class _ModeTabsState extends ConsumerState<ModeTabs> {
     // composer's hint), so it steps aside and the page owns the bottom edge the
     // way it did before there were tabs.
     final typing = media.viewInsets.bottom > 0;
-    final showBar = !typing && !_sunk;
+    // 触摸中不显示；静默满 [barIdle] 才出现。键盘弹起时也不显示（会压住输入框提示）。
+    final showBar = !typing && _awake;
     // The bar stands *under* the page, never over it: the page ends where the
     // bar begins, so the composer, the hint below it and any banner on the last
     // line are never covered.
@@ -131,7 +133,7 @@ class _ModeTabsState extends ConsumerState<ModeTabs> {
       padding: media.padding.copyWith(bottom: showBar ? 0 : media.padding.bottom),
     );
     void pick(AppMode mode) {
-      _wake();
+      _hide();
       if (mode == tab) return;
       // The chat's box gives the keyboard back: the tab under it is not the one
       // being looked at.
@@ -150,7 +152,8 @@ class _ModeTabsState extends ConsumerState<ModeTabs> {
       // page under it.
       child: Listener(
         behavior: HitTestBehavior.translucent,
-        onPointerDown: (_) => _wake(),
+        onPointerDown: (_) => _hide(),
+        onPointerMove: (_) => _hide(),
         child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
