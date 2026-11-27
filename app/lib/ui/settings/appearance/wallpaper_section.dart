@@ -222,10 +222,16 @@ class _WallpaperSectionState extends ConsumerState<WallpaperSection> {
                   unawaited(notifier.setTone(brightness, v));
                 },
               ),
-              SettingsSwitchTile(
-                key: const ValueKey('wallpaper-contain'),
-                title: l10n.wallpaperContain,
-                value: stored?.contain ?? false,
+              // 铺满 / 整图: two buttons, the one in use lit. 铺满 crops the edges, 整图 keeps
+              // the whole picture with the page's colour in the letterbox.
+              SettingsSegmentTile<bool>(
+                key: const ValueKey('wallpaper-fit'),
+                title: l10n.wallpaperFit,
+                segments: [
+                  PillSegment(false, l10n.wallpaperFitCover),
+                  PillSegment(true, l10n.wallpaperFitContain),
+                ],
+                selected: stored?.contain ?? false,
                 onChanged: (v) => unawaited(notifier.setContain(v)),
               ),
               WallpaperSliderRow(
@@ -238,14 +244,21 @@ class _WallpaperSectionState extends ConsumerState<WallpaperSection> {
                   unawaited(notifier.setDarken(v));
                 },
               ),
-              SettingsSwitchTile(
+              // 文字保护: 自动（叠纱 + 调文字色）/ 只调文字（图不动）/ 关闭。
+              SettingsSegmentTile<WallpaperGuard>(
                 key: const ValueKey('wallpaper-guard'),
                 title: l10n.wallpaperGuard,
-                // A playing picture gets no veil, only its text colours; unguarded, not those either.
-                subtitle: stored != null && stored.guard && onDevice.plays(stored)
-                    ? l10n.wallpaperGuardMotionHint
-                    : l10n.wallpaperGuardHint,
-                value: stored?.guard ?? true,
+                subtitle: switch (stored?.guard ?? WallpaperGuard.auto) {
+                  WallpaperGuard.auto => l10n.wallpaperGuardHint,
+                  WallpaperGuard.textOnly => l10n.wallpaperGuardTextOnlyHint,
+                  WallpaperGuard.off => l10n.wallpaperGuardOffHint,
+                },
+                segments: [
+                  PillSegment(WallpaperGuard.auto, l10n.wallpaperGuardAuto),
+                  PillSegment(WallpaperGuard.textOnly, l10n.wallpaperGuardTextOnly),
+                  PillSegment(WallpaperGuard.off, l10n.wallpaperGuardOff),
+                ],
+                selected: stored?.guard ?? WallpaperGuard.auto,
                 onChanged: (v) => unawaited(notifier.setGuard(v)),
               ),
               if (stored != null && onDevice.playable(stored))
@@ -306,6 +319,30 @@ class _WallpaperSectionState extends ConsumerState<WallpaperSection> {
           value: pool.direct,
           onChanged: (on) => unawaited(_toggleDirect(on)),
         ),
+        SettingsSwitchTile(
+          key: const ValueKey('wallpaper-pool-double-tap'),
+          title: l10n.wallpaperDoubleTap,
+          subtitle: l10n.wallpaperDoubleTapHint,
+          value: pool.doubleTap,
+          onChanged: (on) => unawaited(ref.read(wallpaperPoolProvider.notifier).setDoubleTap(on)),
+        ),
+        SettingsSwitchTile(
+          key: const ValueKey('wallpaper-pool-only-favorites'),
+          title: l10n.wallpaperOnlyFavorites,
+          subtitle: l10n.wallpaperOnlyFavoritesHint,
+          value: pool.onlyFavorites,
+          onChanged: pool.favorites.isEmpty
+              ? null
+              : (on) => unawaited(ref.read(wallpaperPoolProvider.notifier).setOnlyFavorites(on)),
+        ),
+        if (stored != null)
+          SettingsSwitchTile(
+            key: const ValueKey('wallpaper-favorite'),
+            title: l10n.wallpaperFavorite,
+            subtitle: l10n.wallpaperFavoriteHint,
+            value: pool.favorites.contains(stored.path),
+            onChanged: (on) => unawaited(ref.read(wallpaperPoolProvider.notifier).toggleFavorite(stored.path)),
+          ),
         SettingsTile(
           key: const ValueKey('wallpaper-preview'),
           title: l10n.wallpaperPreview,
@@ -651,7 +688,8 @@ class _CustomMini extends StatelessWidget {
       final theme = Theme.of(context);
       body = _Screen(
         child: Theme(
-          data: custom.guard ? WallpaperLook.of(context).guardTheme(theme) : theme,
+          // 三档：auto / textOnly 都调文字色，只有 off 不动。
+          data: custom.guard != WallpaperGuard.off ? WallpaperLook.of(context).guardTheme(theme) : theme,
           child: Stack(
             fit: StackFit.expand,
             children: [
