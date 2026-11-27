@@ -45,6 +45,8 @@ import '../tavern/tavern_intake.dart';
 import '../star/star_prompt_host.dart';
 import '../theme/theme.dart';
 import '../update/update_launch_check.dart';
+import '../../state/wallpaper_state.dart';
+import '../../wallpaper/wallpaper_pool.dart';
 import '../wallpaper/wallpaper_backdrop.dart';
 import '../web/dsh_web_launcher.dart';
 import 'adaptive/adaptive_layout.dart';
@@ -270,6 +272,20 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
     ),
   };
 
+  /// 双击换图: on the chat, when 壁纸池 › 双击换图 is on. A tap gesture that only fires on the
+  /// second tap, so single taps still reach the message under it.
+  Map<Type, GestureRecognizerFactory> get _wallpaperDoubleTap {
+    if (ref.read(wallpaperPoolProvider).value?.doubleTap != true) return const {};
+    return {
+      DoubleTapGestureRecognizer: GestureRecognizerFactoryWithHandlers<DoubleTapGestureRecognizer>(
+        () => DoubleTapGestureRecognizer(debugOwner: this),
+        (recognizer) => recognizer.onDoubleTap = () {
+          unawaited(ref.read(customWallpaperProvider.notifier).rotate(force: true));
+        },
+      ),
+    };
+  }
+
   /// The quick panel's swipe (left to open, right to push back).
   Map<Type, GestureRecognizerFactory> get _quickPanelGestures {
     final settings = MediaQuery.maybeGestureSettingsOf(context);
@@ -396,7 +412,11 @@ class _HomeShellState extends ConsumerState<HomeShell> with TickerProviderStateM
                               // areas still drag. Not 对话详情 beside it: its tabs swipe.
                               // No drawer to pull while the sidebar shows.
                               behavior: HitTestBehavior.translucent,
-                              gestures: {if (!sidebar) ..._drawerGestures, if (quickPanelOn) ..._quickPanelGestures},
+                              gestures: {
+                                if (!sidebar) ..._drawerGestures,
+                                if (quickPanelOn) ..._quickPanelGestures,
+                                ..._wallpaperDoubleTap,
+                              },
                               child: chat,
                             ),
                             sidebar: SessionsDrawer(
