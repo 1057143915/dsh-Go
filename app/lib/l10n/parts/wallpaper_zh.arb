@@ -38,5 +38,7 @@
   "wallpaperPoolPeriod": "更换间隔（秒）",
   "wallpaperDirect": "直接用原图",
   "wallpaperDirectFooter": "不拷贝，不限制大小和格式",
-  "wallpaperPoolEmpty": "这个文件夹里没有能用的图片"
+  "wallpaperPoolEmpty": "这个文件夹里没有能用的图片",
+  "wallpaperContain": "整图显示",
+  "wallpaperDarken": "压黑"
 }
