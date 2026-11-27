@@ -13,6 +13,18 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../runtime/container_paths.dart';
 
+/// 文字保护的三档（见 [CustomWallpaper.guard]）。
+enum WallpaperGuard {
+  /// 叠纱 + 挪文字色: the picture is calmed where text would lose contrast.
+  auto,
+
+  /// 只挪文字色: the picture is measured, nothing is drawn over it.
+  textOnly,
+
+  /// 什么都不要: [CustomWallpaper.blur], lighten and dim are all that happen.
+  off,
+}
+
 /// The user's wallpaper and how it sits.
 class CustomWallpaper {
   const CustomWallpaper({
@@ -26,7 +38,7 @@ class CustomWallpaper {
     this.blur = defaultBlur,
     this.lighten = defaultLighten,
     this.dim = defaultDim,
-    this.guard = true,
+    this.guard = WallpaperGuard.auto,
     this.contain = false,
     this.darken = 0,
     this.animated = false,
@@ -71,9 +83,15 @@ class CustomWallpaper {
   final double lighten;
   final double dim;
 
+  /// 文字保护: whether the app calms the picture (a veil) and moves faint text colours so they
+  /// stay readable. [WallpaperGuard.auto] does both; [WallpaperGuard.textOnly] measures the
+  /// picture and only moves the text colours, leaving the picture untouched; [WallpaperGuard.off]
+  /// does neither.
+  final WallpaperGuard guard;
+
   /// The picture is calmed wherever text would lose contrast, and faint text colours move for
-  /// it. Off: [blur], [lighten] and [dim] are all that happens to it; at 0, the picture itself.
-  final bool guard;
+  /// it (the veil half of [guard]).
+  bool get veils => guard == WallpaperGuard.auto;
 
   /// 整图显示: the whole picture fits the screen (letterboxed on the page's own colour)
   /// instead of filling it and cropping the edges.
@@ -125,7 +143,7 @@ class CustomWallpaper {
     double? blur,
     double? lighten,
     double? dim,
-    bool? guard,
+    WallpaperGuard? guard,
     bool? contain,
     double? darken,
     bool? play,
@@ -184,7 +202,7 @@ class CustomWallpaper {
     'blur': blur,
     'lighten': lighten,
     'dim': dim,
-    'guard': guard,
+    'guard': guard.name,
     'contain': contain,
     'darken': darken,
     'animated': animated,
@@ -214,7 +232,13 @@ class CustomWallpaper {
       blur: unit(raw['blur'], defaultBlur),
       lighten: unit(raw['lighten'], defaultLighten),
       dim: unit(raw['dim'], defaultDim),
-      guard: raw['guard'] != false,
+      guard: switch (raw['guard']) {
+        // 旧值：true / false。缺省是 auto。
+        false => WallpaperGuard.off,
+        true || null => WallpaperGuard.auto,
+        final String name => WallpaperGuard.values.asNameMap()[name] ?? WallpaperGuard.auto,
+        _ => WallpaperGuard.auto,
+      },
       contain: raw['contain'] == true,
       darken: unit(raw['darken'], 0),
       animated: raw['animated'] == true,
