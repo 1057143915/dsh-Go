@@ -129,27 +129,31 @@ void main() {
     expect(apkCalls, isEmpty);
   });
 
-  test('OH cached offer survives failed refresh and preserves four-hour failure backoff', () async {
+  test('OH keeps a cached offer without popping it on failure; retries after four hours', () async {
     SharedPreferences.setMockInitialValues({'update_latest': jsonEncode(manifest())});
     final c = container();
     final control = c.read(appUpdateProvider.notifier);
-    expect(await control.autoCheckIfDue(), isTrue);
+    expect(await control.autoCheckIfDue(), isFalse, reason: 'a failed refresh does not prompt with old metadata');
     expect(c.read(appUpdateProvider).checkFailure, isNotNull);
     expect(c.read(appUpdateProvider).noticePage, isNotNull);
     expect(http.urls, [feed]);
+    http.routes[feed] = (_, _) => textResponse(jsonEncode(manifest()..['version'] = '1.3.0'));
     now = now.add(const Duration(hours: 3));
     expect(await control.autoCheckIfDue(), isFalse);
     expect(http.urls, [feed]);
     now = now.add(const Duration(hours: 1));
     expect(await control.autoCheckIfDue(), isTrue);
     expect(http.urls, [feed, feed]);
+    expect(c.read(appUpdateProvider).latest?.version.name, '1.3.0');
+    expect(c.read(appUpdateProvider).checkFailure, isNull);
     expect(apkCalls, isEmpty);
   });
 
   for (final missing in [true, false]) {
     test('OH bundle ${missing ? 'missing' : 'invalid'} retains compiled version and can check', () async {
       device = missing ? null : {'versionName': 'not-a-version', 'versionCode': 42};
-      http.routes[feed] = (_, _) => textResponse(jsonEncode(manifest()));
+      // The compiled version moves with every release; the feed must stay ahead of it.
+      http.routes[feed] = (_, _) => textResponse(jsonEncode(manifest()..['version'] = '99.0.0+1'));
       final c = container();
       final control = c.read(appUpdateProvider.notifier);
       await control.ready;
