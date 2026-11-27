@@ -215,7 +215,7 @@ class WallpaperRenderer {
       final alpha = outW * outH > 1 << 17 ? await compute(veilAlpha, request) : veilAlpha(request);
       final mask = await _maskImage(alpha, request.cols, request.rows);
       try {
-        return await _compose(soft, mask, request, look);
+        return await _compose(soft, mask, request, look, darken: w.darken);
       } finally {
         mask.dispose();
       }
@@ -228,6 +228,7 @@ class WallpaperRenderer {
   Future<ui.Image?> _decode(CustomWallpaper w, WallpaperFrame frame, int outW, bool exact) async {
     final cap = frame.lightweight && !exact ? WallpaperBake.lightDecodeSide : WallpaperBake.decodeSide;
     int target(int iw, int ih) {
+      // contain: windowIn returns the whole picture, so this decodes for the letterboxed size.
       final window = w.windowIn(Size(iw.toDouble(), ih.toDouble()), frame.size);
       final scale = math.min(1.0, math.min(outW / window.width, cap / math.max(iw, ih)));
       return math.max(1, (iw * scale).round());
@@ -280,21 +281,28 @@ class WallpaperRenderer {
     final out = Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble());
     canvas.drawRect(out, Paint()..shader = _veilShader(frame.look, out));
     final bounds = Rect.fromLTWH(0, 0, source.width.toDouble(), source.height.toDouble());
-    final window = w.windowIn(bounds.size, frame.size);
-    final scale = outW / window.width;
-    // Past the screen's edges the blur takes the picture itself, where there is more of it.
-    final src = sigmaPx > 0 ? window.inflate(3 * sigmaPx / scale).intersect(bounds) : window;
-    final dst = Rect.fromLTRB(
-      (src.left - window.left) * scale,
-      (src.top - window.top) * scale,
-      (src.right - window.left) * scale,
-      (src.bottom - window.top) * scale,
-    );
     final paint = Paint()..filterQuality = FilterQuality.high;
     // Blurred as it's drawn: the filter sees the whole drawn piece, past the screen's edges, and
     // stretches the picture's own last pixels where it ends.
     if (sigmaPx > 0) paint.imageFilter = ui.ImageFilter.blur(sigmaX: sigmaPx, sigmaY: sigmaPx);
-    canvas.drawImageRect(source, src, dst, paint);
+    if (w.contain) {
+      // 整图显示: the whole picture, contained and centred; the page's own gradient fills the
+      // letterbox bars (it is already behind, drawn above).
+      final fit = _contain(bounds.size, Size(outW.toDouble(), outH.toDouble()));
+      canvas.drawImageRect(source, bounds, fit, paint);
+    } else {
+      final window = w.windowIn(bounds.size, frame.size);
+      final scale = outW / window.width;
+      // Past the screen's edges the blur takes the picture itself, where there is more of it.
+      final src = sigmaPx > 0 ? window.inflate(3 * sigmaPx / scale).intersect(bounds) : window;
+      final dst = Rect.fromLTRB(
+        (src.left - window.left) * scale,
+        (src.top - window.top) * scale,
+        (src.right - window.left) * scale,
+        (src.bottom - window.top) * scale,
+      );
+      canvas.drawImageRect(source, src, dst, paint);
+    }
     if (tone > 0) {
       canvas.drawRect(
         out,
@@ -303,6 +311,9 @@ class WallpaperRenderer {
           ..color = Color.fromRGBO(0, 0, 0, tone),
       );
     }
+    // 压黑: black, always — light page or dark.
+    final darken = w.darken.clamp(0.0, 1.0);
+    if (darken > 0) canvas.drawRect(out, Paint()..color = Color.fromRGBO(0, 0, 0, darken));
     final recording = recorder.endRecording();
     try {
       return await recording.toImage(outW, outH);
@@ -311,9 +322,24 @@ class WallpaperRenderer {
     }
   }
 
+  /// [picture] 等比放进 [screen]、居中（contain）。返回它在 screen 坐标系里的落点。
+  static Rect _contain(Size picture, Size screen) {
+    if (picture.isEmpty || screen.isEmpty) return Offset.zero & screen;
+    final scale = math.min(screen.width / picture.width, screen.height / picture.height);
+    final width = picture.width * scale;
+    final height = picture.height * scale;
+    return Rect.fromLTWH((screen.width - width) / 2, (screen.height - height) / 2, width, height);
+  }
+
   /// [soft] with the page's gradient laid over it through [mask] (one texel a cell, stretched
   /// smoothly over the cells).
-  static Future<ui.Image> _compose(ui.Image soft, ui.Image mask, VeilRequest r, WallpaperLook look) async {
+  static Future<ui.Image> _compose(
+    ui.Image soft,
+    ui.Image mask,
+    VeilRequest r,
+    WallpaperLook look, {
+    double darken = 0,
+  }) async {
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
     final out = Rect.fromLTWH(0, 0, r.width.toDouble(), r.height.toDouble());
@@ -330,6 +356,9 @@ class WallpaperRenderer {
           ..filterQuality = FilterQuality.low,
       )
       ..restore();
+    // 压黑: black over the finished bake, in the same raster (no second full-screen pass).
+    final d = darken.clamp(0.0, 1.0);
+    if (d > 0) canvas.drawRect(out, Paint()..color = Color.fromRGBO(0, 0, 0, d));
     final recording = recorder.endRecording();
     try {
       return await recording.toImage(r.width, r.height);
