@@ -122,8 +122,8 @@ abstract final class WallpaperBake {
     return lightweight ? math.min(sigma * 0.5, lightSigma) : sigma;
   }
 
-  /// σ in dp for [w] on [frame]. Unguarded it is the slider's own, whatever the profile: the
-  /// picture is promised to be exactly what the sliders say.
+  /// σ in dp for [w] on [frame]. With 文字保护 off it is the slider's own, whatever the profile:
+  /// the picture is promised to be exactly what the sliders say.
   static double sigmaOf(CustomWallpaper w, WallpaperFrame frame) =>
       sigmaFor(w.blur, lightweight: frame.lightweight && w.guard != WallpaperGuard.off);
 
@@ -181,8 +181,8 @@ class WallpaperRenderer {
   Future<ui.Image?> _bake(CustomWallpaper w, WallpaperFrame frame, double? density, bool moving) async {
     if (frame.size.isEmpty) return null;
     final sigma = WallpaperBake.sigmaOf(w, frame);
-    // Unguarded, nothing may soften the picture but its own blur: the lightweight profile's
-    // fewer pixels would.
+    // With 文字保护 off, nothing may soften the picture but its own blur: the lightweight
+    // profile's fewer pixels would.
     // off 那条路完全是原图：轻量档的降采样也不许动它。
     final exact = w.guard == WallpaperGuard.off && !moving;
     final k = density ?? WallpaperBake.densityFor(frame, sigma, exact: exact);
