@@ -28,5 +28,15 @@
   "wallpaperSampleAnswer": "Yes. Saturday afternoon is sunny with a light breeze and waves under half a metre, the best day this week.",
   "wallpaperSampleNote": "It cools down fast in the evening, so bring a light jacket.",
   "wallpaperSampleTool": "Checked 3 weather sources",
-  "searchKwWallpaper": "background,background image,chat background,custom background,backdrop,blur,photo,animated,gif,live wallpaper"
+  "searchKwWallpaper": "background,background image,chat background,custom background,backdrop,blur,photo,animated,gif,live wallpaper",
+  "wallpaperPoolDirectory": "Wallpaper folder",
+  "wallpaperPoolNone": "No folder chosen",
+  "wallpaperPoolChange": "Another one",
+  "wallpaperPoolOnLaunch": "At every launch",
+  "wallpaperPoolOnChat": "When switching chats",
+  "wallpaperPoolOnInterval": "On a timer",
+  "wallpaperPoolPeriod": "Interval (seconds)",
+  "wallpaperDirect": "Use the original file",
+  "wallpaperDirectFooter": "No copy, no size or format limits",
+  "wallpaperPoolEmpty": "No usable pictures in that folder"
 }
