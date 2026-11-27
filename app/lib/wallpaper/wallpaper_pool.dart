@@ -7,8 +7,8 @@
 //    PNG / JPEG / WebP、取边缘色、保留观感）。
 //  - 不检查（direct）：原图直接当壁纸，不拷贝、不按大小和格式拦，取景用原样模式。
 //
-// 1.4.1 起上游把「原样显示」换成了 CustomWallpaper.guard（自动保证文字清晰），池里不再
-// 持有 raw；模糊和提亮 / 压暗仍然存在池里（blur / lighten / dim），换下一张照样沿用。
+// 观感整套存在池里，换下一张照样沿用：模糊 / 提亮 / 压暗 / 压黑 / 铺满还是整图 / 文字保护。
+// 设一次管到底，换图不会把它们打回默认。
 
 import 'dart:convert';
 import 'dart:io';
@@ -17,6 +17,8 @@ import 'dart:ui' show Brightness;
 
 import 'package:flutter/foundation.dart' show compute;
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'custom_wallpaper.dart';
 
 /// 什么时候自动换一张；可以同时开着几个。
 enum WallpaperPoolTrigger {
@@ -38,6 +40,12 @@ class WallpaperPool {
     this.seconds = defaultSeconds,
     this.last = '',
     this.direct = false,
+    this.contain = false,
+    this.darken = 0,
+    this.guard = WallpaperGuard.auto,
+    this.doubleTap = false,
+    this.favorites = const <String>{},
+    this.onlyFavorites = false,
     this.blur,
     this.lighten,
     this.dim,
@@ -71,6 +79,24 @@ class WallpaperPool {
   /// 不检查：原图直接当壁纸，不拷贝、不按大小和格式拦（认不出的格式解码不出来才跳过）。
   final bool direct;
 
+  /// 铺满（cover）还是整图（contain）。
+  final bool contain;
+
+  /// 压黑：0–1，不管浅色深色都往黑压。
+  final double darken;
+
+  /// 文字保护：auto（叠纱 + 调文字色）/ textOnly（只调文字色）/ off。
+  final WallpaperGuard guard;
+
+  /// 双击首页 / 对话换下一张。
+  final bool doubleTap;
+
+  /// 收藏的图片路径：只轮换收藏时，随机范围缩到这里。
+  final Set<String> favorites;
+
+  /// 只轮换收藏的那几张。
+  final bool onlyFavorites;
+
   /// 观感：模糊、浅色提亮、深色压暗。null 表示还没调过（用 App 默认值）。
   /// 存在池里，所以换下一张时沿用同一套 —— 不会每换一张就回到默认。
   final double? blur;
@@ -85,6 +111,12 @@ class WallpaperPool {
     int? seconds,
     String? last,
     bool? direct,
+    bool? contain,
+    double? darken,
+    WallpaperGuard? guard,
+    bool? doubleTap,
+    Set<String>? favorites,
+    bool? onlyFavorites,
     double? blur,
     double? lighten,
     double? dim,
@@ -95,6 +127,12 @@ class WallpaperPool {
         seconds: seconds ?? this.seconds,
         last: last ?? this.last,
         direct: direct ?? this.direct,
+        contain: contain ?? this.contain,
+        darken: darken ?? this.darken,
+        guard: guard ?? this.guard,
+        doubleTap: doubleTap ?? this.doubleTap,
+        favorites: favorites ?? this.favorites,
+        onlyFavorites: onlyFavorites ?? this.onlyFavorites,
         blur: blur ?? this.blur,
         lighten: lighten ?? this.lighten,
         dim: dim ?? this.dim,
@@ -127,6 +165,12 @@ class WallpaperPool {
     'seconds': seconds,
     'last': last,
     'direct': direct,
+    'contain': contain,
+    'darken': darken,
+    'guard': guard.name,
+    'doubleTap': doubleTap,
+    'favorites': favorites.toList(),
+    'onlyFavorites': onlyFavorites,
     'blur': ?blur,
     'lighten': ?lighten,
     'dim': ?dim,
@@ -149,6 +193,24 @@ class WallpaperPool {
       seconds: seconds is int && seconds >= minSeconds && seconds <= maxSeconds ? seconds : defaultSeconds,
       last: last is String ? last : '',
       direct: raw['direct'] == true,
+      contain: raw['contain'] == true,
+      darken: _unit(raw['darken']) ?? 0,
+      doubleTap: raw['doubleTap'] == true,
+      favorites: raw['favorites'] is List
+          ? {
+              for (final path in (raw['favorites']! as List))
+                if (path is String && path.isNotEmpty) path,
+            }
+          : const <String>{},
+      onlyFavorites: raw['onlyFavorites'] == true,
+      // 旧数据里没有 guard：direct（直接用原图）那档本来是「不盖纱」，所以升级后仍旧 off，
+      // 不要因为多了这个字段就把纱盖回去。
+      guard: switch (raw['guard']) {
+        false => WallpaperGuard.off,
+        true => WallpaperGuard.auto,
+        final String name => WallpaperGuard.values.asNameMap()[name] ?? WallpaperGuard.auto,
+        _ => raw['direct'] == true ? WallpaperGuard.off : WallpaperGuard.auto,
+      },
       blur: _unit(raw['blur']),
       lighten: _unit(raw['lighten']),
       dim: _unit(raw['dim']),
