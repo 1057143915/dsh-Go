@@ -92,6 +92,8 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
     ref.read(companionInitiativeProvider);
     // 壁纸池: a new picture at every launch, when that moment is on (async: the first
     // frame doesn't wait for it).
+    // 升级后第一次：把当前这张的观感补进池，之后换图不会再把压黑 / 整图 / 文字保护打回默认。
+    unawaited(ref.read(customWallpaperProvider.notifier).adoptLookIntoPool());
     unawaited(ref.read(customWallpaperProvider.notifier).rotateOnLaunch());
     // 刷新率: some systems cap third-party apps at 60 Hz and then show their per-app
     // switch as an in-app setting; the app answers frames to run at the fastest rate
