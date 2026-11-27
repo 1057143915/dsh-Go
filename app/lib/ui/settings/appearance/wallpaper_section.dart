@@ -140,11 +140,37 @@ class _WallpaperSectionState extends ConsumerState<WallpaperSection> {
     if (text != null) messenger?.showBriefNotice(text);
   }
 
+  /// 壁纸文件夹: the folder browser the workspace already uses.
+  Future<void> _choosePoolDirectory() async {
+    final title = context.l10n.wallpaperPoolDirectory;
+    final directory = await showDirectoryPicker(context, title: title);
+    if (directory == null || directory.isEmpty) return;
+    await ref.read(wallpaperPoolProvider.notifier).setDirectory(directory);
+    await _changeFromPool();
+  }
+
+  /// 「换一张」: every tap counts, so it skips the cooldown.
+  Future<void> _changeFromPool() async {
+    final l10n = context.l10n;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final changed = await ref.read(customWallpaperProvider.notifier).rotate(force: true);
+    messenger?.showBriefNotice(changed ? l10n.wallpaperChanged : l10n.wallpaperPoolEmpty);
+  }
+
+  Future<void> _togglePool(WallpaperPoolTrigger trigger, bool on) =>
+      ref.read(wallpaperPoolProvider.notifier).toggle(trigger, on);
+
+  Future<void> _setPoolSeconds(int value) => ref.read(wallpaperPoolProvider.notifier).setSeconds(value);
+
+  Future<void> _toggleDirect(bool on) => ref.read(wallpaperPoolProvider.notifier).setDirect(on);
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final stored = ref.watch(customWallpaperProvider).value;
     final notifier = ref.read(customWallpaperProvider.notifier);
+    // 壁纸池：文件夹、三个触发、间隔、上一张。
+    final pool = ref.watch(wallpaperPoolProvider).value ?? const WallpaperPool();
     final wallpaper = _draft ?? stored;
     final on = stored != null && stored.on;
     final brightness = Theme.of(context).brightness;
