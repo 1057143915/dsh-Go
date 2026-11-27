@@ -107,6 +107,7 @@ class CustomWallpaperController extends AsyncNotifier<CustomWallpaper?> {
 
   /// 整图显示: the whole picture fits the screen, letterboxed on the page's colour.
   Future<void> setContain(bool contain) async {
+    await ref.read(wallpaperPoolProvider.notifier).setContain(contain);
     final current = await _current;
     if (current == null || current.contain == contain) return;
     await _store(current.copyWith(contain: contain));
@@ -115,13 +116,15 @@ class CustomWallpaperController extends AsyncNotifier<CustomWallpaper?> {
   /// 压黑: black over the picture, whatever the page's brightness.
   Future<void> setDarken(double value) async {
     final clamped = value.clamp(0.0, 1.0);
+    await ref.read(wallpaperPoolProvider.notifier).setDarken(clamped);
     final current = await _current;
     if (current == null || current.darken == clamped) return;
     await _store(current.copyWith(darken: clamped));
   }
 
-  /// 自动保证文字清晰: off, the picture is only as soft and as calm as the sliders say.
-  Future<void> setGuard(bool guard) async {
+  /// 文字保护: auto / textOnly / off, and remembered in the pool so a new picture keeps it.
+  Future<void> setGuard(WallpaperGuard guard) async {
+    await ref.read(wallpaperPoolProvider.notifier).setGuard(guard);
     final current = await _current;
     if (current == null || current.guard == guard) return;
     await _store(current.copyWith(guard: guard));
@@ -132,6 +135,23 @@ class CustomWallpaperController extends AsyncNotifier<CustomWallpaper?> {
     final current = await _current;
     if (current == null || current.play == play) return;
     await _store(current.copyWith(play: play));
+  }
+
+  /// 首次把「当前这张」的观感灌进池：老版本只把 blur/lighten/dim 存池，contain / darken /
+  /// 文字保护 只在壁纸对象里，换一张就丢。升级后跑一次，让池成为唯一真身。
+  Future<void> adoptLookIntoPool() async {
+    final current = await _current;
+    if (current == null) return;
+    final pool = await ref.read(wallpaperPoolProvider.future);
+    await ref.read(wallpaperPoolProvider.notifier).adoptFromWallpaper(
+      contain: current.contain,
+      darken: current.darken,
+      guard: current.guard,
+      blur: current.blur,
+      lighten: current.lighten,
+      dim: current.dim,
+      onlyIfUnset: pool,
+    );
   }
 
   /// 每次启动: 池开着这一档就换一张。App 起来后调一次，重复调用只算一次。
@@ -158,6 +178,9 @@ class CustomWallpaperController extends AsyncNotifier<CustomWallpaper?> {
       var remaining = pool.direct
           ? await WallpaperPool.allImages(pool.directory)
           : await WallpaperPool.images(pool.directory);
+      if (pool.onlyFavorites && pool.favorites.isNotEmpty) {
+        remaining = remaining.where(pool.favorites.contains).toList();
+      }
       final previous = await _current;
       for (var attempt = 0; attempt < WallpaperPool.maxAttempts && remaining.isNotEmpty; attempt++) {
         final next = WallpaperPool.pick(remaining, previous?.path);
@@ -165,14 +188,20 @@ class CustomWallpaperController extends AsyncNotifier<CustomWallpaper?> {
         remaining = remaining.where((path) => path != next).toList();
         final (wallpaper, _) = pool.direct ? await _adoptDirect(next) : await _adopt(next, previous);
         if (wallpaper == null) continue; // 认不出来 / 读不出来: 换下一张再试
-        // 观感沿用池里那套（模糊 / 提亮 / 压暗）：新图不是回到默认，而是和你上一张一样。
+        // 观感全套沿用池里那套：模糊 / 提亮 / 压暗 / 压黑 / 铺满还是整图 / 文字保护。
+        // 换一张不是回到默认，而是和你上一张一模一样 —— 调一次管到底。
         final blur = pool.blur ?? wallpaper.blur;
         final lighten = pool.lighten ?? wallpaper.lighten;
         final dim = pool.dim ?? wallpaper.dim;
         await _store(
-          // 1.4.1 没有 raw 字段了：direct 那条路用 guard:false（不盖纱、不加遮罩）；
-          // blur / lighten / dim 沿用池里那套，换下一张仍是同一套观感。
-          wallpaper.copyWith(guard: !pool.direct, blur: blur, lighten: lighten, dim: dim),
+          wallpaper.copyWith(
+            guard: pool.guard,
+            contain: pool.contain,
+            darken: pool.darken,
+            blur: blur,
+            lighten: lighten,
+            dim: dim,
+          ),
         );
         await ref.read(wallpaperPoolProvider.notifier).take(next);
         _lastRotate = now;
@@ -278,6 +307,43 @@ class WallpaperPoolController extends AsyncNotifier<WallpaperPool> {
   );
 
   Future<void> setDirect(bool direct) => _update((pool) => pool.copyWith(direct: direct));
+
+  Future<void> setContain(bool contain) => _update((pool) => pool.copyWith(contain: contain));
+
+  Future<void> setDarken(double value) => _update((pool) => pool.copyWith(darken: value.clamp(0.0, 1.0)));
+
+  Future<void> setGuard(WallpaperGuard guard) => _update((pool) => pool.copyWith(guard: guard));
+
+  /// 把当前壁纸的观感补进池（升级后第一次启动用；池里已有的值不动）。
+  Future<void> adoptFromWallpaper({
+    required bool contain,
+    required double darken,
+    required WallpaperGuard guard,
+    required double blur,
+    required double lighten,
+    required double dim,
+    required WallpaperPool onlyIfUnset,
+  }) => _update(
+    (pool) => pool.copyWith(
+      contain: pool.contain == onlyIfUnset.contain ? contain : pool.contain,
+      darken: pool.darken == onlyIfUnset.darken ? darken : pool.darken,
+      guard: pool.guard == onlyIfUnset.guard ? guard : pool.guard,
+      blur: pool.blur ?? blur,
+      lighten: pool.lighten ?? lighten,
+      dim: pool.dim ?? dim,
+    ),
+  );
+
+  Future<void> setDoubleTap(bool on) => _update((pool) => pool.copyWith(doubleTap: on));
+
+  Future<void> setOnlyFavorites(bool on) => _update((pool) => pool.copyWith(onlyFavorites: on));
+
+  /// 收藏 / 取消收藏当前这张。
+  Future<void> toggleFavorite(String path) => _update((pool) {
+    final next = {...pool.favorites};
+    if (!next.remove(path)) next.add(path);
+    return pool.copyWith(favorites: next);
+  });
 
   Future<void> take(String path) => _update((pool) => pool.copyWith(last: path));
 
