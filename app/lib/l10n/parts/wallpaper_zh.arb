@@ -28,5 +28,15 @@
   "wallpaperSampleAnswer": "适合。周六午后晴，风力 2 级，浪高不到半米，是这周最好的一天。",
   "wallpaperSampleNote": "傍晚降温明显，带一件薄外套。",
   "wallpaperSampleTool": "查了 3 个天气来源",
-  "searchKwWallpaper": "背景,背景图,聊天背景,自定义背景,换背景,模糊,壁纸图片,动图,动态壁纸,GIF"
+  "searchKwWallpaper": "背景,背景图,聊天背景,自定义背景,换背景,模糊,壁纸图片,动图,动态壁纸,GIF",
+  "wallpaperPoolDirectory": "壁纸文件夹",
+  "wallpaperPoolNone": "还没选文件夹",
+  "wallpaperPoolChange": "换一张",
+  "wallpaperPoolOnLaunch": "每次启动时换",
+  "wallpaperPoolOnChat": "切换聊天框时换",
+  "wallpaperPoolOnInterval": "定时换",
+  "wallpaperPoolPeriod": "更换间隔（秒）",
+  "wallpaperDirect": "直接用原图",
+  "wallpaperDirectFooter": "不拷贝，不限制大小和格式",
+  "wallpaperPoolEmpty": "这个文件夹里没有能用的图片"
 }
