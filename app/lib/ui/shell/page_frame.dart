@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../../l10n/l10n.dart';
 import '../common/ui_trace.dart';
 import '../common/side_insets.dart';
+import '../modes/mode_tabs.dart' show leaveModeTab;
 import '../settings/index/spot_anchor.dart' show seekSpot;
 import '../theme/app_icons.dart';
 import '../theme/theme.dart';
@@ -256,7 +257,14 @@ class _AppPageState extends State<AppPage> {
                             GlassIconButton(
                               icon: AppIcons.back,
                               tooltip: l10n.commonBack,
-                              onPressed: () => Navigator.of(context).maybePop(),
+                              onPressed: () {
+                                // 伙伴 / 酒馆 are tabs now: back on one of their own
+                                // root pages returns to 工作. A page pushed from
+                                // there still pops, so this asks which route it is.
+                                final first = ModalRoute.of(context)?.isFirst ?? true;
+                                if (first && leaveModeTab(context)) return;
+                                Navigator.of(context).maybePop();
+                              },
                             ),
                       ),
                       middle: ValueListenableBuilder<double>(
