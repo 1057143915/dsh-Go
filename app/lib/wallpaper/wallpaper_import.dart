@@ -5,6 +5,7 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:path_provider/path_provider.dart';
 
@@ -77,6 +78,23 @@ class WallpaperImport {
   }
 
   /// Deletes a wallpaper file; nothing if it's already gone.
+  /// 原图的尺寸：只读文件头拿宽高，不解码像素（一张 4000×3000 直接展开是 48 MB，
+  /// 换图那一下正是掉帧的来源）。认不出来返回 null，由调用处跳过这一张。
+  static Future<(int, int)?> dimensions(String path) async {
+    ui.ImmutableBuffer? buffer;
+    ui.ImageDescriptor? descriptor;
+    try {
+      buffer = await ui.ImmutableBuffer.fromFilePath(path);
+      descriptor = await ui.ImageDescriptor.encoded(buffer);
+      return (descriptor.width, descriptor.height);
+    } catch (_) {
+      return null;
+    } finally {
+      descriptor?.dispose();
+      buffer?.dispose();
+    }
+  }
+
   static Future<void> removeFile(String path) async {
     try {
       final f = File(path);
