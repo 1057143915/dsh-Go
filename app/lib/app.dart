@@ -20,7 +20,10 @@ import 'state/app_info.dart';
 import 'state/appearance_state.dart';
 import 'state/locale_state.dart';
 import 'state/notify_state.dart' show notifyChannelProvider;
+import 'state/sessions_state.dart' show currentSessionProvider;
 import 'state/star_prompt.dart' show starPromptGateProvider, starPromptProvider;
+import 'state/wallpaper_rotation.dart';
+import 'state/wallpaper_state.dart';
 import 'state/tile_style_state.dart';
 import 'ui/chat/dsh_ui/dsh_ui_model.dart' show DshUiAppAccent;
 import 'ui/chat/run_info.dart' show runActivityProvider;
@@ -87,11 +90,20 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
     if (ref.read(starPromptGateProvider)) ref.read(starPromptProvider);
     // 伙伴小屋: her invitation ledger is read now, so it is known before the room opens.
     ref.read(companionInitiativeProvider);
+    // 壁纸池: a new picture at every launch, when that moment is on (async: the first
+    // frame doesn't wait for it).
+    unawaited(ref.read(customWallpaperProvider.notifier).rotateOnLaunch());
     // 刷新率: some systems cap third-party apps at 60 Hz and then show their per-app
     // switch as an in-app setting; the app answers frames to run at the fastest rate
     // while it is actually drawing (see RefreshRateService).
     RefreshRateService.instance.start();
     WidgetsBinding.instance.addObserver(this);
+  }
+
+  /// 壁纸池: its timer runs in front only (lib/state/wallpaper_rotation.dart).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    ref.read(wallpaperRotationProvider).setForeground(state == AppLifecycleState.resumed);
   }
 
   @override
@@ -207,6 +219,11 @@ class _DshAppState extends ConsumerState<DshApp> with WidgetsBindingObserver {
     if (ref.watch(companionResidencyProvider).enabled) ref.watch(petOverlayBridgeProvider);
     // 刷新率设置改动时告诉原生;setMode 对同一个值不做任何事。
     unawaited(RefreshRateService.instance.setMode(ref.watch(performancePrefsProvider.select((p) => p.refreshRate))));
+    // 壁纸池: the timer follows the settings; a change of chat forwards to it below.
+    ref.read(wallpaperRotationProvider).sync(ref.watch(wallpaperPoolProvider).value);
+    ref.listen(currentSessionProvider, (previous, next) {
+      if (previous != next) ref.read(wallpaperRotationProvider).onSessionChanged();
+    });
     final themeMode = ref.watch(uiThemeModeProvider.select((s) => s.value));
     final appearance = ref.watch(appearanceProvider);
     final waiting =
