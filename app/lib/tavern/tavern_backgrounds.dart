@@ -9,6 +9,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show Brightness;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
@@ -68,6 +69,19 @@ class TavernChatBackground extends Notifier<CustomWallpaper?> {
     final previous = state;
     await _store(null);
     if (previous != null) await WallpaperImport.removeFile(previous.path);
+  }
+
+  /// 模糊 / 提亮 / 压暗 for this chat's picture: the same three the app's own
+  /// wallpaper has, on the picture itself. Null when this chat has no picture.
+  Future<void> setBlur(double blur) => _refine((w) => w.copyWith(blur: blur.clamp(0.0, 1.0)));
+
+  Future<void> setTone(Brightness brightness, double tone) =>
+      _refine((w) => w.withTone(brightness, tone.clamp(0.0, 1.0)));
+
+  Future<void> _refine(CustomWallpaper Function(CustomWallpaper) change) async {
+    final current = state;
+    if (current == null) return;
+    await _store(change(current));
   }
 
   Future<void> _store(CustomWallpaper? picture) async {
