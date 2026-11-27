@@ -27,6 +27,8 @@ class CustomWallpaper {
     this.lighten = defaultLighten,
     this.dim = defaultDim,
     this.guard = true,
+    this.contain = false,
+    this.darken = 0,
     this.animated = false,
     this.play = true,
     this.on = true,
@@ -73,6 +75,14 @@ class CustomWallpaper {
   /// it. Off: [blur], [lighten] and [dim] are all that happens to it; at 0, the picture itself.
   final bool guard;
 
+  /// 整图显示: the whole picture fits the screen (letterboxed on the page's own colour)
+  /// instead of filling it and cropping the edges.
+  final bool contain;
+
+  /// 0–1: black laid over the picture, whatever the page's brightness. 提亮 / 压暗 follow the
+  /// theme's colour; this one always goes towards black.
+  final double darken;
+
   /// More than one frame (a GIF, an animated WebP or PNG), as read on import.
   final bool animated;
 
@@ -91,6 +101,8 @@ class CustomWallpaper {
   /// The same window in a picture [picture] large (a downscaled decode of it).
   Rect windowIn(Size picture, Size screen) {
     if (picture.isEmpty || screen.isEmpty) return Offset.zero & picture;
+    // 整图显示: what the screen shows is the whole picture, letterboxed by the renderer.
+    if (contain) return Offset.zero & picture;
     final cover = (picture.width / picture.height > screen.width / screen.height)
         ? Size(picture.height * screen.width / screen.height, picture.height)
         : Size(picture.width, picture.width * screen.height / screen.width);
@@ -114,6 +126,8 @@ class CustomWallpaper {
     double? lighten,
     double? dim,
     bool? guard,
+    bool? contain,
+    double? darken,
     bool? play,
     bool? on,
   }) => CustomWallpaper(
@@ -128,6 +142,8 @@ class CustomWallpaper {
     lighten: lighten ?? this.lighten,
     dim: dim ?? this.dim,
     guard: guard ?? this.guard,
+    contain: contain ?? this.contain,
+    darken: darken ?? this.darken,
     animated: animated,
     play: play ?? this.play,
     on: on ?? this.on,
@@ -169,6 +185,8 @@ class CustomWallpaper {
     'lighten': lighten,
     'dim': dim,
     'guard': guard,
+    'contain': contain,
+    'darken': darken,
     'animated': animated,
     'play': play,
     'on': on,
@@ -197,6 +215,8 @@ class CustomWallpaper {
       lighten: unit(raw['lighten'], defaultLighten),
       dim: unit(raw['dim'], defaultDim),
       guard: raw['guard'] != false,
+      contain: raw['contain'] == true,
+      darken: unit(raw['darken'], 0),
       animated: raw['animated'] == true,
       play: raw['play'] != false,
       on: raw['on'] != false,
@@ -256,6 +276,8 @@ class CustomWallpaper {
       other.lighten == lighten &&
       other.dim == dim &&
       other.guard == guard &&
+      other.contain == contain &&
+      other.darken == darken &&
       other.animated == animated &&
       other.play == play &&
       other.on == on;
