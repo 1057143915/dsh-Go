@@ -223,6 +223,22 @@ class _WallpaperSectionState extends ConsumerState<WallpaperSection> {
                 },
               ),
               SettingsSwitchTile(
+                key: const ValueKey('wallpaper-contain'),
+                title: l10n.wallpaperContain,
+                value: stored?.contain ?? false,
+                onChanged: (v) => unawaited(notifier.setContain(v)),
+              ),
+              WallpaperSliderRow(
+                key: const ValueKey('wallpaper-darken'),
+                title: l10n.wallpaperDarken,
+                value: wallpaper?.darken ?? 0,
+                onChanged: (v) => setState(() => _draft = (_draft ?? stored)?.copyWith(darken: v)),
+                onChangeEnd: (v) {
+                  setState(() => _draft = null);
+                  unawaited(notifier.setDarken(v));
+                },
+              ),
+              SettingsSwitchTile(
                 key: const ValueKey('wallpaper-guard'),
                 title: l10n.wallpaperGuard,
                 // A playing picture gets no veil, only its text colours; unguarded, not those either.
