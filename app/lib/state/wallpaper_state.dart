@@ -105,6 +105,21 @@ class CustomWallpaperController extends AsyncNotifier<CustomWallpaper?> {
     await _store(current.withTone(brightness, value));
   }
 
+  /// 整图显示: the whole picture fits the screen, letterboxed on the page's colour.
+  Future<void> setContain(bool contain) async {
+    final current = await _current;
+    if (current == null || current.contain == contain) return;
+    await _store(current.copyWith(contain: contain));
+  }
+
+  /// 压黑: black over the picture, whatever the page's brightness.
+  Future<void> setDarken(double value) async {
+    final clamped = value.clamp(0.0, 1.0);
+    final current = await _current;
+    if (current == null || current.darken == clamped) return;
+    await _store(current.copyWith(darken: clamped));
+  }
+
   /// 自动保证文字清晰: off, the picture is only as soft and as calm as the sliders say.
   Future<void> setGuard(bool guard) async {
     final current = await _current;
