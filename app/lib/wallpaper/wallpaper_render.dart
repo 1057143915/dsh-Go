@@ -125,7 +125,7 @@ abstract final class WallpaperBake {
   /// σ in dp for [w] on [frame]. Unguarded it is the slider's own, whatever the profile: the
   /// picture is promised to be exactly what the sliders say.
   static double sigmaOf(CustomWallpaper w, WallpaperFrame frame) =>
-      sigmaFor(w.blur, lightweight: frame.lightweight && w.guard);
+      sigmaFor(w.blur, lightweight: frame.lightweight && w.guard != WallpaperGuard.off);
 
   /// Pixels per dp for [frame] at blur [sigma] ([densityAt]). [exact]: from the screen's own
   /// density, whatever the profile.
@@ -183,7 +183,8 @@ class WallpaperRenderer {
     final sigma = WallpaperBake.sigmaOf(w, frame);
     // Unguarded, nothing may soften the picture but its own blur: the lightweight profile's
     // fewer pixels would.
-    final exact = !w.guard && !moving;
+    // off 那条路完全是原图：轻量档的降采样也不许动它。
+    final exact = w.guard == WallpaperGuard.off && !moving;
     final k = density ?? WallpaperBake.densityFor(frame, sigma, exact: exact);
     final outW = math.max(1, (frame.size.width * k).round());
     final outH = math.max(1, (frame.size.height * k).round());
@@ -191,8 +192,15 @@ class WallpaperRenderer {
     if (source == null) return null;
     final look = frame.look;
     final tone = w.toneFor(look.brightness).clamp(0.0, 1.0) * WallpaperBake.maxTone;
-    if (!w.guard || moving) return _soften(source, w, frame, outW, outH, sigma * k, tone: tone);
+    if (w.guard == WallpaperGuard.off || moving) {
+      return _soften(source, w, frame, outW, outH, sigma * k, tone: tone);
+    }
     final soft = await _soften(source, w, frame, outW, outH, sigma * k);
+    if (w.guard == WallpaperGuard.textOnly) {
+      // 只调文字: measure the picture (below) but never draw the veil over it — the bake goes
+      // out as _soften made it, and the text colours are the ones that move.
+      return soft;
+    }
     try {
       final data = await soft.toByteData(format: ui.ImageByteFormat.rawRgba);
       if (data == null) return null;
