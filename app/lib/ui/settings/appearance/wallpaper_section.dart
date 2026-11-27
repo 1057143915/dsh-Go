@@ -26,6 +26,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../l10n/l10n.dart';
@@ -33,8 +34,10 @@ import '../../../performance/performance_state.dart';
 import '../../../state/wallpaper_state.dart';
 import '../../../wallpaper/custom_wallpaper.dart';
 import '../../../wallpaper/wallpaper_look.dart';
+import '../../../wallpaper/wallpaper_pool.dart';
 import '../../../wallpaper/wallpaper_render.dart';
 import '../../common/brief_notice.dart';
+import '../../workspace/directory_picker.dart' show showDirectoryPicker;
 import '../../common/expand_reveal.dart';
 import '../../common/pressable.dart';
 import '../../theme/app_icons.dart';
@@ -220,11 +223,136 @@ class _WallpaperSectionState extends ConsumerState<WallpaperSection> {
           ),
         ),
         SettingsTile(
+          key: const ValueKey('wallpaper-pool-directory'),
+          title: l10n.wallpaperPoolDirectory,
+          subtitle: pool.directory.isEmpty ? l10n.wallpaperPoolNone : pool.directory,
+          onTap: () => unawaited(_choosePoolDirectory()),
+        ),
+        SettingsTile(
+          key: const ValueKey('wallpaper-pool-change'),
+          title: l10n.wallpaperPoolChange,
+          onTap: () => unawaited(_changeFromPool()),
+        ),
+        SettingsSwitchTile(
+          key: const ValueKey('wallpaper-pool-launch'),
+          title: l10n.wallpaperPoolOnLaunch,
+          value: pool.has(WallpaperPoolTrigger.launch),
+          onChanged: (on) => unawaited(_togglePool(WallpaperPoolTrigger.launch, on)),
+        ),
+        SettingsSwitchTile(
+          key: const ValueKey('wallpaper-pool-chat'),
+          title: l10n.wallpaperPoolOnChat,
+          value: pool.has(WallpaperPoolTrigger.chat),
+          onChanged: (on) => unawaited(_togglePool(WallpaperPoolTrigger.chat, on)),
+        ),
+        SettingsSwitchTile(
+          key: const ValueKey('wallpaper-pool-interval'),
+          title: l10n.wallpaperPoolOnInterval,
+          value: pool.has(WallpaperPoolTrigger.interval),
+          onChanged: (on) => unawaited(_togglePool(WallpaperPoolTrigger.interval, on)),
+        ),
+        WallpaperPoolPeriodSlider(
+          key: const ValueKey('wallpaper-pool-period'),
+          seconds: pool.seconds,
+          enabled: pool.has(WallpaperPoolTrigger.interval),
+          onChanged: (value) => unawaited(_setPoolSeconds(value)),
+        ),
+        SettingsSwitchTile(
+          key: const ValueKey('wallpaper-pool-direct'),
+          title: l10n.wallpaperDirect,
+          subtitle: l10n.wallpaperDirectFooter,
+          value: pool.direct,
+          onChanged: (on) => unawaited(_toggleDirect(on)),
+        ),
+        SettingsTile(
           key: const ValueKey('wallpaper-preview'),
           title: l10n.wallpaperPreview,
           onTap: () => unawaited(showWallpaperPreview(context)),
         ),
       ],
+    );
+  }
+}
+
+class WallpaperPoolPeriodSlider extends StatelessWidget {
+  const WallpaperPoolPeriodSlider({
+    super.key,
+    required this.seconds,
+    required this.enabled,
+    required this.onChanged,
+  });
+
+  final int seconds;
+  final bool enabled;
+  final ValueChanged<int> onChanged;
+
+  /// 滑块位置（0–1）与秒数的换算：对数刻度。
+  static double toSlider(int seconds) {
+    final lo = math.log(WallpaperPool.minSeconds);
+    final hi = math.log(WallpaperPool.maxSeconds);
+    return ((math.log(seconds.clamp(WallpaperPool.minSeconds, WallpaperPool.maxSeconds)) - lo) / (hi - lo)).clamp(0.0, 1.0);
+  }
+
+  static int fromSlider(double value) {
+    final lo = math.log(WallpaperPool.minSeconds);
+    final hi = math.log(WallpaperPool.maxSeconds);
+    final seconds = math.exp(lo + value.clamp(0.0, 1.0) * (hi - lo)).round();
+    // 短间隔按秒取整，长间隔取 5 秒台阶，方便停在整数值上。
+    return seconds <= 60 ? seconds : (seconds / 5).round() * 5;
+  }
+
+  /// 「10 秒」「1 分 30 秒」「10 分」。
+  static String label(int seconds) {
+    if (seconds < 60) return '$seconds 秒';
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    return s == 0 ? '$m 分' : '$m 分 $s 秒';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return MergeSemantics(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(SettingsMetrics.inset, 14, SettingsMetrics.inset, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(child: Text(context.l10n.wallpaperPoolPeriod, style: settingsTitleStyle(context))),
+                const SizedBox(width: 12),
+                Text(
+                  label(seconds),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: enabled ? scheme.onSurfaceVariant : scheme.onSurfaceVariant.withValues(alpha: 0.4),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Semantics(
+              label: context.l10n.wallpaperPoolPeriod,
+              child: Slider(
+                value: toSlider(seconds),
+                padding: EdgeInsets.zero,
+                activeColor: enabled ? scheme.onSurfaceVariant : scheme.onSurfaceVariant.withValues(alpha: 0.3),
+                inactiveColor: scheme.onSurface.withValues(alpha: 0.1),
+                onChanged: enabled
+                    ? (raw) {
+                        final next = fromSlider(raw);
+                        if (next == seconds) return;
+                        HapticFeedback.selectionClick();
+                        onChanged(next);
+                      }
+                    : null,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
