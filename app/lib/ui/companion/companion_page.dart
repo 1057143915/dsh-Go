@@ -70,6 +70,7 @@ import '../common/discard_guard.dart';
 import '../common/empty_view.dart';
 import '../common/sheet_title_bar.dart';
 import '../modes/mode_switch.dart';
+import '../modes/mode_tabs.dart' show leaveModeTab;
 import '../settings/settings_widgets.dart';
 import '../theme/accent.dart';
 import '../theme/app_icons.dart';
@@ -3772,6 +3773,8 @@ class _CompanionPageState extends ConsumerState<CompanionPage>
                 grouped: true,
                 onTap: () {
                   _acted();
+                  // 伙伴 is a tab: back goes to 工作 rather than closing the app.
+                  if (leaveModeTab(context)) return;
                   unawaited(Navigator.of(context).maybePop());
                 },
               ),
