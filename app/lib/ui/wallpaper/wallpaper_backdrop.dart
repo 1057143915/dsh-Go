@@ -4,8 +4,8 @@
 //
 // The picture is baked once for this screen and mode (lib/wallpaper/wallpaper_render.dart) and
 // only drawn after that; a new bake fades in over the old one. While it shows, text colours
-// fainter than the secondary one are guarded for it (WallpaperLook.guardTheme), unless the user
-// switched that off (CustomWallpaper.guard).
+// fainter than the secondary one are guarded for it (WallpaperLook.guardTheme) unless the user
+// turned 文字保护 off (CustomWallpaper.guard); 只调文字 keeps the text half and drops the veil.
 //
 // An animated picture plays (lib/wallpaper/wallpaper_frames.dart) over the bake of its first
 // frame, each frame painted by the backdrop's own painter. It doesn't with motion reduced, the
@@ -169,7 +169,8 @@ class _WallpaperBackdropState extends ConsumerState<WallpaperBackdrop> with Sing
             live: plays ? _live(shown, on) : null,
           );
     final theme = Theme.of(context);
-    final guard = _image != null && (shown?.guard ?? true);
+    // 三档：auto 与 textOnly 都调文字色；只有 off 不动。图上的纱由渲染那头决定。
+    final guard = _image != null && (shown?.guard ?? WallpaperGuard.auto) != WallpaperGuard.off;
     if (guard && !identical(theme, _theme)) {
       _theme = theme;
       _guarded = frame.look.guardTheme(theme);
