@@ -274,7 +274,8 @@ final sceneImageProvider = FutureProvider.autoDispose.family<ui.Image?, (CustomW
   final (picture, frame) = key;
   final lightweight = ref.watch(performanceDefaultsProvider.select((p) => p.lightweight));
   final on = frame.copyWith(lightweight: lightweight);
-  final image = await ref.watch(_sceneRendererProvider).bake(picture.copyWith(guard: true), on);
+  // A scene is always the veiled one: its page has no switch for this.
+  final image = await ref.watch(_sceneRendererProvider).bake(picture.copyWith(guard: WallpaperGuard.auto), on);
   if (!ref.mounted) {
     image?.dispose();
     return null;
