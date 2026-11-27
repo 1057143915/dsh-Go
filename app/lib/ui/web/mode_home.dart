@@ -14,6 +14,7 @@ import '../../runtime/android_background_turns.dart';
 import '../../state/sessions_state.dart';
 import '../../state/ui_mode_state.dart';
 import '../modes/mode_switch.dart';
+import '../modes/mode_tabs.dart';
 import '../shell/home_shell.dart';
 import '../shell/page_frame.dart';
 import '../theme/app_icons.dart';
@@ -55,21 +56,21 @@ class _ModeHomeState extends ConsumerState<ModeHome> {
       _handoff = id == null ? const DshWebTarget(newSession: true) : DshWebTarget(sessionId: id);
     }
     _shown = mode.mode;
-    final Widget home = mode.web
-        ? KeyedSubtree(
-            key: const ValueKey(UiMode.web),
-            child: widget.web?.call(_handoff) ?? WebHome(initial: _handoff),
-          )
-        : KeyedSubtree(key: const ValueKey(UiMode.native), child: widget.native ?? const HomeShell());
-    // A launch into 伙伴 or 酒馆 opens that page over the home first.
-    return ModeLaunch(
-      child: AnimatedSwitcher(
-        duration: AppMotion.of(context, AppMotion.page),
-        switchInCurve: AppMotion.enter,
-        switchOutCurve: AppMotion.exit,
-        child: home,
-      ),
+    // 工作 sits beside 伙伴 / 酒馆 behind the bar at the foot of the screen
+    // (lib/ui/modes/mode_tabs.dart): a launch into either of those shows it as
+    // chosen, not as a page over an already-drawn home.
+    final work = AnimatedSwitcher(
+      duration: AppMotion.of(context, AppMotion.page),
+      switchInCurve: AppMotion.enter,
+      switchOutCurve: AppMotion.exit,
+      child: mode.web
+          ? KeyedSubtree(
+              key: const ValueKey(UiMode.web),
+              child: widget.web?.call(_handoff) ?? WebHome(initial: _handoff),
+            )
+          : KeyedSubtree(key: const ValueKey(UiMode.native), child: widget.native ?? const HomeShell()),
     );
+    return ModeLaunch(child: ModeTabs(work: work));
   }
 }
 
