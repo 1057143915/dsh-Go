@@ -1,6 +1,8 @@
 // 设置 › 主题 › 壁纸: the user's own wallpaper (lib/wallpaper/custom_wallpaper.dart), whether it's
 // the one in use, and the picture baked for the screen it's on.
 
+import 'dart:io';
+
 import 'dart:ui' as ui;
 import 'dart:ui' show Brightness;
 
