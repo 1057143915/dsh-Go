@@ -362,6 +362,25 @@ class _Session extends ConsumerWidget {
                 chevron: false,
                 onTap: () => unawaited(ref.read(tavernChatBackgroundProvider(chatId).notifier).remove()),
               ),
+            // 模糊 / 提亮 / 压暗: the same three the app's own wallpaper has, on
+            // this chat's picture. Dragging only moves the number; the picture
+            // is baked once when the finger lets go.
+            if (scene != null)
+              _BackgroundSlider(
+                key: const ValueKey('tavern-background-blur'),
+                title: l10n.wallpaperBlur,
+                value: scene.blur,
+                onDone: (v) => unawaited(ref.read(tavernChatBackgroundProvider(chatId).notifier).setBlur(v)),
+              ),
+            if (scene != null)
+              _BackgroundSlider(
+                key: const ValueKey('tavern-background-tone'),
+                title: Theme.of(context).brightness == Brightness.dark ? l10n.wallpaperDim : l10n.wallpaperLighten,
+                value: scene.toneFor(Theme.of(context).brightness),
+                onDone: (v) => unawaited(
+                  ref.read(tavernChatBackgroundProvider(chatId).notifier).setTone(Theme.of(context).brightness, v),
+                ),
+              ),
           ],
         ),
         TavernAudioSection(chatId: chatId),
@@ -440,6 +459,34 @@ class _Session extends ConsumerWidget {
       ],
     );
   }
+}
+
+/// One of the picture's two looks, held as it is dragged: the number moves
+/// with the finger, and only the value it lands on is baked.
+class _BackgroundSlider extends StatefulWidget {
+  const _BackgroundSlider({super.key, required this.title, required this.value, required this.onDone});
+
+  final String title;
+  final double value;
+  final ValueChanged<double> onDone;
+
+  @override
+  State<_BackgroundSlider> createState() => _BackgroundSliderState();
+}
+
+class _BackgroundSliderState extends State<_BackgroundSlider> {
+  double? _draft;
+
+  @override
+  Widget build(BuildContext context) => SettingsSliderTile(
+    title: widget.title,
+    value: _draft ?? widget.value,
+    onChanged: (v) => setState(() => _draft = v),
+    onChangeEnd: (v) {
+      setState(() => _draft = null);
+      widget.onDone(v);
+    },
+  );
 }
 
 /// A picture from the gallery under [chatId]; says so when one can't be used.
